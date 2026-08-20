@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../../src/engine/settings';
 import { Simulation, tick } from '../../src/engine/simulation';
-import { dna, emptyGrid, organic, place, testSettings } from './fixtures';
+import { Instruction } from '../../src/engine/types';
+import { dna, emptyGrid, mineral, organic, place, testSettings } from './fixtures';
 import { MockRNG } from './mockRng';
 
 describe('tick', () => {
@@ -23,6 +24,35 @@ describe('tick', () => {
     tick(grid, settings, new MockRNG([0.5]), () => idc++);
     // age reaches maxAge(2) -> dies this tick, corpse left behind
     expect(grid.get(5, 5)).toMatchObject({ kind: 'mineral' });
+  });
+
+  it('drives movement end-to-end via decideAction for a hand-built hunting genome (#9)', () => {
+    // A single-state genome that always chooses Move(TowardConsume) and never
+    // leaves state 0 (Random is always >= 0, jumpOffset 0 loops back to itself).
+    const huntForever: Instruction = {
+      action: { type: 'Move', mode: 'TowardConsume' },
+      sensor: 'Random',
+      comparator: '>=',
+      threshold: 0,
+      jumpOffset: 0,
+    };
+    const settings = testSettings({ visionRange: 10, moveConsumption: 0, permanentConsumption: 0 });
+    const grid = emptyGrid(settings);
+    const hunter = organic(
+      { x: 0, y: 0 },
+      { dna: dna({ consume: 'Green', behavior: [huntForever] }), energy: 1000, size: 1000 },
+    );
+    const food = mineral({ x: 5, y: 5 }, 'Green', 1000);
+    place(grid, hunter, food);
+    let idc = 0;
+
+    for (let i = 0; i < 4; i++) {
+      tick(grid, settings, new MockRNG([0.5]), () => idc++);
+    }
+
+    expect(hunter.chosenAction).toEqual({ type: 'Move', mode: 'TowardConsume' });
+    expect(hunter.position).toEqual({ x: 4, y: 4 }); // stepped diagonally toward the food each tick
+    expect(hunter.currentState).toBe(0); // loops on the same state, per the hand-built genome
   });
 });
 

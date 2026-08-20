@@ -4,7 +4,7 @@ import {
   applyToxin,
   cleanup,
   consume,
-  decideDirections,
+  decideAction,
   exhaust,
   moveOrganics,
   produceWaste,
@@ -16,7 +16,7 @@ import { DNA, Organic, Position } from './types';
 
 /** Runs one full tick: all eight phases, in order, over the whole population. */
 export function tick(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): void {
-  decideDirections(grid, settings, rng);
+  decideAction(grid, settings, rng);
   moveOrganics(grid, settings);
   reproduce(grid, settings, rng, nextId);
   consume(grid, settings);
@@ -54,6 +54,7 @@ export class Simulation {
       accumulatedWaste: 0,
       dna: dna ?? randomDNA(this.rng),
       currentState: 0,
+      chosenAction: null,
     };
     this.grid.set(position.x, position.y, organic);
     return organic;

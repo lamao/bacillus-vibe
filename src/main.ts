@@ -1,16 +1,10 @@
-import { randomDNA, starterInstructionMatrix } from './engine/dna';
+import { randomDNA } from './engine/dna';
 import { DefaultRNG } from './engine/rng';
 import { defaultSettings } from './engine/settings';
 import { Simulation } from './engine/simulation';
 import { Action, Position, Substance, substanceOf } from './engine/types';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import './style.css';
-
-// Stand-in genome for the inspector's "Action" readout: `Organic.currentState`
-// is a stub (always 0) until the real interpreter (#6) lands and organics
-// carry their own instruction matrix, so every organic is shown against this
-// one hand-authored matrix for now.
-const INSPECTOR_INSTRUCTION_MATRIX = starterInstructionMatrix();
 
 function formatAction(action: Action): string {
   switch (action.type) {
@@ -152,7 +146,6 @@ const renderInspector = (): void => {
       { label: 'Size', value: Math.round(entity.size).toString() },
     );
     if (entity.kind === 'organic') {
-      const instruction = INSPECTOR_INSTRUCTION_MATRIX[entity.currentState];
       rows.push(
         { label: 'Energy', value: Math.round(entity.energy).toString() },
         { label: 'Age', value: entity.age.toString() },
@@ -163,7 +156,7 @@ const renderInspector = (): void => {
         { label: 'Toxin', value: entity.dna.toxin },
         { label: 'Moves', value: entity.dna.canMove ? 'yes' : 'no' },
         { label: 'State', value: entity.currentState.toString() },
-        { label: 'Action', value: formatAction(instruction.action) },
+        { label: 'Action', value: entity.chosenAction ? formatAction(entity.chosenAction) : '—' },
       );
     }
   }

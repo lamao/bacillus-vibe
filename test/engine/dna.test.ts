@@ -28,6 +28,7 @@ describe('randomDNA', () => {
     expect(d.produce).toBeDefined();
     expect(d.toxin).toBeDefined();
     expect(typeof d.canMove).toBe('boolean');
+    expect(d.behavior).toHaveLength(INSTRUCTION_MATRIX_SIZE);
   });
 });
 

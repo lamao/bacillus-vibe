@@ -1,6 +1,6 @@
 import { Grid } from '../../src/engine/grid';
 import { defaultSettings, Settings } from '../../src/engine/settings';
-import { DNA, Mineral, Organic, Position, Substance } from '../../src/engine/types';
+import { DNA, INSTRUCTION_MATRIX_SIZE, InstructionMatrix, Mineral, Organic, Position, Substance } from '../../src/engine/types';
 
 let idSeq = 0;
 export function resetIds(): void {
@@ -14,6 +14,22 @@ export function testSettings(overrides: Partial<Settings> = {}): Settings {
   return { ...defaultSettings(10, 10), ...overrides };
 }
 
+/**
+ * A 25-entry matrix that always Rests (its `Random >= 2` test can never pass,
+ * so it just cycles through identical Rest states). Used as the default test
+ * DNA behavior so phase tests that don't target `decideAction` aren't affected
+ * by action-gated movement/digestion; tests that need real behavior override it.
+ */
+export function restBehavior(): InstructionMatrix {
+  return Array.from({ length: INSTRUCTION_MATRIX_SIZE }, () => ({
+    action: { type: 'Rest' as const },
+    sensor: 'Random' as const,
+    comparator: '>=' as const,
+    threshold: 2,
+    jumpOffset: 0,
+  }));
+}
+
 export function dna(overrides: Partial<DNA> = {}): DNA {
   return {
     body: 'Blue',
@@ -21,6 +37,7 @@ export function dna(overrides: Partial<DNA> = {}): DNA {
     produce: 'Yellow',
     toxin: 'Red',
     canMove: true,
+    behavior: restBehavior(),
     ...overrides,
   };
 }
@@ -37,6 +54,7 @@ export function organic(position: Position, overrides: Partial<Organic> = {}): O
     accumulatedWaste: 0,
     dna: dna(),
     currentState: 0,
+    chosenAction: null,
     ...overrides,
   };
 }

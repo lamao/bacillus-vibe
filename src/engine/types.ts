@@ -21,6 +21,8 @@ export interface DNA {
   toxin: Substance;
   /** Whether this organic actively moves/hunts, or passively digests nearby matter. */
   canMove: boolean;
+  /** This organic's finite-state behavior program; see InstructionMatrix below. */
+  behavior: InstructionMatrix;
 }
 
 export interface Mineral {
@@ -43,13 +45,10 @@ export interface Organic {
   age: number;
   accumulatedWaste: number;
   dna: DNA;
-  /**
-   * Index into the instruction matrix ring (see below) this organic is
-   * currently in. Stubbed at 0 for every organic until the interpreter
-   * (#6) actually advances it; exists so the inspector (#8) has something
-   * to show.
-   */
+  /** Index into `dna.behavior`'s instruction ring this organic is currently in; advanced each tick by `decideAction`. */
   currentState: number;
+  /** The action `decideAction` chose for this tick; null before the first tick evaluates it. */
+  chosenAction: Action | null;
 }
 
 export type Entity = Mineral | Organic;
@@ -61,11 +60,6 @@ export function substanceOf(entity: Entity): Substance {
 export function chebyshevDistance(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
-
-/**
- * Draft, not yet wired into the tick pipeline — see #6/#5.
- * `DNA` does not carry a `behavior: InstructionMatrix` field yet.
- */
 
 export type MoveMode = 'TowardConsume' | 'AwayFromToxin' | 'TowardOpenSpace' | 'Random' | 'Hold';
 export type ProduceMode = 'Release' | 'Hold';

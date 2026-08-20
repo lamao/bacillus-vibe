@@ -2,15 +2,17 @@ import { Grid } from './grid';
 import { mutateDNA } from './dna';
 import { RNG, pick } from './rng';
 import { Settings } from './settings';
-import { Entity, Mineral, Organic, Position, chebyshevDistance, substanceOf } from './types';
-
-const DIRECTIONS: Position[] = [];
-for (let dy = -1; dy <= 1; dy++) {
-  for (let dx = -1; dx <= 1; dx++) {
-    if (dx === 0 && dy === 0) continue;
-    DIRECTIONS.push({ x: dx, y: dy });
-  }
-}
+import {
+  Entity,
+  Mineral,
+  MoveMode,
+  Organic,
+  Position,
+  Sensor,
+  chebyshevDistance,
+  substanceOf,
+  wrapMatrixIndex,
+} from './types';
 
 function sign(n: number): number {
   return n > 0 ? 1 : n < 0 ? -1 : 0;
@@ -50,45 +52,89 @@ function drainEntity(entity: Entity, amount: number): number {
   return drained;
 }
 
+/** Chebyshev distance to the nearest entity matching `dna.consume` within vision range, or `visionRange` if none is found. */
+function foodDistance(organic: Organic, grid: Grid, settings: Settings): number {
+  const candidates = grid
+    .entitiesInRange(organic.position, settings.visionRange)
+    .filter((e) => e !== organic && substanceOf(e) === organic.dna.consume);
+
+  let nearest = settings.visionRange;
+  for (const candidate of candidates) {
+    nearest = Math.min(nearest, chebyshevDistance(organic.position, candidate.position));
+  }
+  return nearest;
+}
+
 /**
- * Phase 1: moving organics look for the largest matching-`consume` entity within
- * vision range and set direction toward it; otherwise pick a random direction
- * (or none, if that would leave the grid). Non-movers get no direction.
+ * Reads one instruction's sensor. Only `FoodDist` and `Random` are implemented
+ * for this subtask's minimal slice (#9); the rest read as 0 until #13 fills
+ * out the remaining sensors.
  */
-export function decideDirections(grid: Grid, settings: Settings, rng: RNG): void {
-  for (const organic of grid.organics()) {
-    if (!organic.dna.canMove) {
-      organic.direction = null;
-      continue;
-    }
-
-    const candidates = grid
-      .entitiesInRange(organic.position, settings.visionRange)
-      .filter((e) => e !== organic && substanceOf(e) === organic.dna.consume);
-
-    let target: Entity | null = null;
-    for (const candidate of candidates) {
-      if (!target || candidate.size > target.size) target = candidate;
-    }
-
-    const direction = target
-      ? { x: sign(target.position.x - organic.position.x), y: sign(target.position.y - organic.position.y) }
-      : pick(rng, DIRECTIONS);
-
-    const tx = organic.position.x + direction.x;
-    const ty = organic.position.y + direction.y;
-    organic.direction = grid.inBounds(tx, ty) ? direction : null;
+function evaluateSensor(sensor: Sensor, organic: Organic, grid: Grid, settings: Settings, rng: RNG): number {
+  switch (sensor) {
+    case 'FoodDist':
+      return foodDistance(organic, grid, settings);
+    case 'Random':
+      return rng.next();
+    default:
+      return 0;
   }
 }
 
 /**
- * Phase 2: moving organics with a direction spend MoveConsumption energy and step
- * that way. A free target cell means relocation; a matching-food target means a
- * bite instead of a move; anything else leaves the organic in place.
+ * Resolves the direction a `Move` action steps in this tick. Only `TowardConsume`
+ * (target the largest matching-`consume` entity within vision range, same scan
+ * the old `decideDirections` did) and `Hold` (never move) are implemented for
+ * this subtask's minimal slice (#9); the remaining modes hold until #13.
+ */
+function resolveMoveDirection(mode: MoveMode, organic: Organic, grid: Grid, settings: Settings): Position | null {
+  if (mode !== 'TowardConsume') return null;
+
+  const candidates = grid
+    .entitiesInRange(organic.position, settings.visionRange)
+    .filter((e) => e !== organic && substanceOf(e) === organic.dna.consume);
+
+  let target: Entity | null = null;
+  for (const candidate of candidates) {
+    if (!target || candidate.size > target.size) target = candidate;
+  }
+  if (!target) return null;
+
+  const direction = { x: sign(target.position.x - organic.position.x), y: sign(target.position.y - organic.position.y) };
+  const tx = organic.position.x + direction.x;
+  const ty = organic.position.y + direction.y;
+  return grid.inBounds(tx, ty) ? direction : null;
+}
+
+/**
+ * Phase 1: interprets each organic's current instruction — stamps `chosenAction`
+ * (and a `Move` direction, if applicable) from the current state's action, then
+ * evaluates its one test and advances `currentState`: the sensor read against the
+ * threshold sends the ring forward by `jumpOffset` on true, or by 1 on false,
+ * both wrapped modulo the ring size.
+ */
+export function decideAction(grid: Grid, settings: Settings, rng: RNG): void {
+  for (const organic of grid.organics()) {
+    const instruction = organic.dna.behavior[organic.currentState];
+    organic.chosenAction = instruction.action;
+    organic.direction =
+      instruction.action.type === 'Move' ? resolveMoveDirection(instruction.action.mode, organic, grid, settings) : null;
+
+    const sensorValue = evaluateSensor(instruction.sensor, organic, grid, settings, rng);
+    const testPassed = instruction.comparator === '<' ? sensorValue < instruction.threshold : sensorValue >= instruction.threshold;
+    organic.currentState = wrapMatrixIndex(organic.currentState, testPassed ? instruction.jumpOffset : 1);
+  }
+}
+
+/**
+ * Phase 2: organics whose chosen action this tick was `Move`, and who have a
+ * direction, spend MoveConsumption energy and step that way. A free target cell
+ * means relocation; a matching-food target means a bite instead of a move;
+ * anything else leaves the organic in place.
  */
 export function moveOrganics(grid: Grid, settings: Settings): void {
   for (const organic of grid.organics()) {
-    if (!organic.dna.canMove || !organic.direction) continue;
+    if (organic.chosenAction?.type !== 'Move' || !organic.direction) continue;
 
     organic.energy -= settings.moveConsumption;
 
@@ -141,6 +187,7 @@ export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () =
         accumulatedWaste: 0,
         dna: mutateDNA(parent.dna, rng, settings.mutationRate),
         currentState: 0,
+        chosenAction: null,
       };
       grid.set(tx, ty, offspring);
       parent.size -= spent;
@@ -151,9 +198,11 @@ export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () =
 }
 
 /**
- * Phase 4: Sun-consumers gain SunYield regardless of position. Non-movers
- * additionally drain matching minerals/organics within ConsumingRange. Of the
- * raw amount drained, ProductionPerformance becomes waste; the rest is gained.
+ * Phase 4: Sun-consumers gain SunYield regardless of position. Organics whose
+ * chosen action this tick wasn't `Move` additionally drain matching
+ * minerals/organics within ConsumingRange (ambient passive digestion — see #5
+ * §3). Of the raw amount drained, ProductionPerformance becomes waste; the
+ * rest is gained.
  */
 export function consume(grid: Grid, settings: Settings): void {
   for (const organic of grid.organics()) {
@@ -161,7 +210,7 @@ export function consume(grid: Grid, settings: Settings): void {
       gainEnergy(organic, settings.sunYield, settings);
     }
 
-    if (organic.dna.canMove) continue;
+    if (organic.chosenAction?.type === 'Move') continue;
 
     const targets = grid
       .entitiesInRange(organic.position, settings.consumingRange)
