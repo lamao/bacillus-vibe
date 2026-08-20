@@ -156,6 +156,13 @@ make the Sonar steps work, in **this repo's** GitHub settings add:
    (Settings → Secrets and variables → Actions → *Variables*).
 3. **Variable** `SONAR_PROJECT_KEY` — the SonarCloud project key you
    create for this repo (same *Variables* tab).
+4. On **sonarcloud.io itself**, open the project → **Administration →
+   Analysis Method** and turn **off** "Automatic Analysis." SonarCloud
+   defaults new GitHub-imported projects to its own automatic scanning,
+   which is mutually exclusive with the CI-based scan `ci.yml` runs — with
+   both on, the scan fails with `You are running CI analysis while
+   Automatic Analysis is enabled`, confirmed by an actual run against this
+   repo.
 
 Everything upstream of the Sonar step (typecheck, tests, coverage, build)
 is confirmed green in Actions on this repo already; the Sonar step itself
