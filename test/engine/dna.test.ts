@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mutateDNA, randomConsumeSubstance, randomDNA, randomPhysicalSubstance } from '../../src/engine/dna';
-import { PHYSICAL_SUBSTANCES } from '../../src/engine/types';
+import { mutateDNA, randomConsumeSubstance, randomDNA, randomPhysicalSubstance, starterInstructionMatrix } from '../../src/engine/dna';
+import { INSTRUCTION_MATRIX_SIZE, PHYSICAL_SUBSTANCES, wrapMatrixIndex } from '../../src/engine/types';
 import { dna } from './fixtures';
 import { MockRNG } from './mockRng';
 
@@ -89,5 +89,65 @@ describe('mutateDNA', () => {
     const rng = new MockRNG([0, 0.8, 0.9]);
     const child = mutateDNA(parent, rng, 1);
     expect(child.canMove).toBe(false);
+  });
+});
+
+describe('starterInstructionMatrix', () => {
+  const matrix = starterInstructionMatrix();
+
+  it('has all 25 states populated with well-formed instructions', () => {
+    expect(matrix).toHaveLength(INSTRUCTION_MATRIX_SIZE);
+    for (const instruction of matrix) {
+      expect(instruction.action).toBeDefined();
+      expect(['<', '>=']).toContain(instruction.comparator);
+      expect(Number.isFinite(instruction.threshold)).toBe(true);
+      expect(Number.isInteger(instruction.jumpOffset)).toBe(true);
+    }
+  });
+
+  it('has valid jump offsets: every true/false target lands within the ring', () => {
+    matrix.forEach((instruction, index) => {
+      const trueTarget = wrapMatrixIndex(index, instruction.jumpOffset);
+      const falseTarget = wrapMatrixIndex(index, 1);
+      expect(trueTarget).toBeGreaterThanOrEqual(0);
+      expect(trueTarget).toBeLessThan(INSTRUCTION_MATRIX_SIZE);
+      expect(falseTarget).toBeGreaterThanOrEqual(0);
+      expect(falseTarget).toBeLessThan(INSTRUCTION_MATRIX_SIZE);
+    });
+  });
+
+  it('is not stuck in a dead branch: every state is reachable from state 0', () => {
+    const reachable = new Set<number>();
+    const queue = [0];
+    while (queue.length > 0) {
+      const index = queue.pop()!;
+      if (reachable.has(index)) continue;
+      reachable.add(index);
+      const instruction = matrix[index];
+      queue.push(wrapMatrixIndex(index, instruction.jumpOffset));
+      queue.push(wrapMatrixIndex(index, 1));
+    }
+    expect(reachable.size).toBe(INSTRUCTION_MATRIX_SIZE);
+  });
+
+  it('reaches both hunting and fleeing Move actions', () => {
+    expect(matrix.some((i) => i.action.type === 'Move' && i.action.mode === 'TowardConsume')).toBe(true);
+    expect(matrix.some((i) => i.action.type === 'Move' && i.action.mode === 'AwayFromToxin')).toBe(true);
+  });
+
+  it('reaches a Split action', () => {
+    expect(matrix.some((i) => i.action.type === 'Split')).toBe(true);
+  });
+
+  it('reaches Produce and Rest actions occasionally, not on every state', () => {
+    const produceOrRestCount = matrix.filter((i) => i.action.type === 'Produce' || i.action.type === 'Rest').length;
+    expect(produceOrRestCount).toBeGreaterThan(0);
+    expect(produceOrRestCount).toBeLessThan(matrix.length);
+  });
+
+  it('returns a fresh matrix each call (not a shared mutable reference)', () => {
+    const other = starterInstructionMatrix();
+    expect(other).toEqual(matrix);
+    expect(other).not.toBe(matrix);
   });
 });
