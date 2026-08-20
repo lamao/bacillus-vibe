@@ -133,7 +133,11 @@ surface is the CI pipeline itself:
   default.
 - [`.github/dependabot.yml`](.github/dependabot.yml) covers both the npm
   and github-actions ecosystems; `dependency-review-action` runs on every
-  PR and fails on newly introduced vulnerable/malicious packages.
+  PR and fails on newly introduced vulnerable/malicious packages. **This
+  needs Dependency graph enabled** (Settings → Security → Dependency
+  graph) — without it the job fails immediately with "Dependency review
+  is not supported on this repository," confirmed by an actual PR run
+  against this repo.
 - GitHub secret scanning + push protection are expected to be enabled on
   this repo as a backstop (repo owner responsibility, not something a
   workflow can turn on).
@@ -152,6 +156,11 @@ make the Sonar steps work, in **this repo's** GitHub settings add:
    (Settings → Secrets and variables → Actions → *Variables*).
 3. **Variable** `SONAR_PROJECT_KEY` — the SonarCloud project key you
    create for this repo (same *Variables* tab).
+
+Everything upstream of the Sonar step (typecheck, tests, coverage, build)
+is confirmed green in Actions on this repo already; the Sonar step itself
+fails until the three items above are filled in — that failure is
+expected out of the box.
 
 These aren't committed because they're specific to whoever's SonarCloud
 account owns the analysis.
