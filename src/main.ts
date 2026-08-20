@@ -108,6 +108,12 @@ function formatStats(): string {
   return `Tick ${simulation.tickCount} · Population ${organics.length}${suffix}`;
 }
 
+interface InspectorRow {
+  label: string;
+  value: string;
+  swatchColor?: string;
+}
+
 const renderInspector = (): void => {
   if (!inspectMode || !inspectedCell) {
     inspectorEl.classList.add('hidden');
@@ -115,33 +121,47 @@ const renderInspector = (): void => {
   }
 
   const entity = simulation.grid.get(inspectedCell.x, inspectedCell.y);
-  const rows: [string, string][] = [['Cell', `${inspectedCell.x}, ${inspectedCell.y}`]];
+  const rows: InspectorRow[] = [{ label: 'Cell', value: `${inspectedCell.x}, ${inspectedCell.y}` }];
 
   if (!entity) {
-    rows.push(['Empty', '—']);
+    rows.push({ label: 'Empty', value: '—' });
   } else {
     const substance = substanceOf(entity);
-    const color = SUBSTANCE_COLORS[substance];
     rows.push(
-      ['Kind', entity.kind],
-      ['Substance', `<span class="swatch" style="background:${color}"></span>${substance}`],
-      ['Size', Math.round(entity.size).toString()],
+      { label: 'Kind', value: entity.kind },
+      { label: 'Substance', value: substance, swatchColor: SUBSTANCE_COLORS[substance] },
+      { label: 'Size', value: Math.round(entity.size).toString() },
     );
     if (entity.kind === 'organic') {
       rows.push(
-        ['Energy', Math.round(entity.energy).toString()],
-        ['Age', entity.age.toString()],
-        ['Waste', Math.round(entity.accumulatedWaste).toString()],
-        ['Body', entity.dna.body],
-        ['Consume', entity.dna.consume],
-        ['Produce', entity.dna.produce],
-        ['Toxin', entity.dna.toxin],
-        ['Moves', entity.dna.canMove ? 'yes' : 'no'],
+        { label: 'Energy', value: Math.round(entity.energy).toString() },
+        { label: 'Age', value: entity.age.toString() },
+        { label: 'Waste', value: Math.round(entity.accumulatedWaste).toString() },
+        { label: 'Body', value: entity.dna.body },
+        { label: 'Consume', value: entity.dna.consume },
+        { label: 'Produce', value: entity.dna.produce },
+        { label: 'Toxin', value: entity.dna.toxin },
+        { label: 'Moves', value: entity.dna.canMove ? 'yes' : 'no' },
       );
     }
   }
 
-  inspectorEl.innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  const dl = document.createElement('dl');
+  for (const row of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = row.label;
+    const dd = document.createElement('dd');
+    if (row.swatchColor) {
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.backgroundColor = row.swatchColor;
+      dd.appendChild(swatch);
+    }
+    dd.appendChild(document.createTextNode(row.value));
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  inspectorEl.replaceChildren(dl);
   inspectorEl.classList.remove('hidden');
 };
 
