@@ -140,6 +140,7 @@ export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () =
         age: 0,
         accumulatedWaste: 0,
         dna: mutateDNA(parent.dna, rng, settings.mutationRate),
+        currentState: 0,
       };
       grid.set(tx, ty, offspring);
       parent.size -= spent;

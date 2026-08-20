@@ -53,6 +53,7 @@ export class Simulation {
       age: 0,
       accumulatedWaste: 0,
       dna: dna ?? randomDNA(this.rng),
+      currentState: 0,
     };
     this.grid.set(position.x, position.y, organic);
     return organic;
