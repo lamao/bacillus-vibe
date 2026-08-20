@@ -18,17 +18,19 @@
       <main>
         <div id="canvas-wrap">
           <canvas id="grid-canvas"></canvas>
+          <div id="inspector" class="inspector hidden" aria-live="polite"></div>
         </div>
       </main>
       <footer id="controls">
         <button id="pause-btn" type="button">Pause</button>
         <button id="add-btn" type="button">Add creature</button>
+        <button id="inspect-btn" type="button" aria-pressed="false">Inspect</button>
         <label class="speed-control">
           Speed
           <input id="speed" type="range" min="1" max="30" value="1" />
           <span id="speed-value">1x</span>
         </label>
-        <span class="hint">Tap the grid to add a creature</span>
+        <span class="hint" id="hint">Tap the grid to add a creature</span>
       </footer>
     </div>
     <script type="module" src="/src/main.ts"></script>

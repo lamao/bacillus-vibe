@@ -67,6 +67,7 @@ main {
   flex: 1;
   min-height: 0;
   display: flex;
+  position: relative;
 }
 
 #grid-canvas {
@@ -75,6 +76,10 @@ main {
   height: 100%;
   touch-action: none;
   cursor: crosshair;
+}
+
+#grid-canvas.inspecting {
+  cursor: help;
 }
 
 footer#controls {
@@ -100,6 +105,56 @@ button {
 
 button:active {
   filter: brightness(0.9);
+}
+
+button[aria-pressed='true'] {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.inspector {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  max-width: min(260px, calc(100% - 1.2rem));
+  background: rgba(16, 24, 43, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.inspector.hidden {
+  display: none;
+}
+
+.inspector dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.1rem 0.6rem;
+  margin: 0;
+}
+
+.inspector dt {
+  color: var(--muted);
+}
+
+.inspector dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.inspector .swatch {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 2px;
+  margin-right: 0.3em;
+  vertical-align: -0.05em;
 }
 
 .speed-control {
