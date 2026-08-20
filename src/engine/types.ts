@@ -54,3 +54,44 @@ export function substanceOf(entity: Entity): Substance {
 export function chebyshevDistance(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
+
+/**
+ * Draft, not yet wired into the tick pipeline — see #6/#5.
+ * `DNA` does not carry a `behavior: InstructionMatrix` field yet.
+ */
+
+export type MoveMode = 'TowardConsume' | 'AwayFromToxin' | 'TowardOpenSpace' | 'Random' | 'Hold';
+export type ProduceMode = 'Release' | 'Hold';
+export type SplitMode = 'Attempt';
+
+export type Action =
+  | { type: 'Move'; mode: MoveMode }
+  | { type: 'Produce'; mode: ProduceMode }
+  | { type: 'Split'; mode: SplitMode }
+  | { type: 'Rest' };
+
+export type Sensor = 'FoodDist' | 'ToxinDist' | 'EnergyRatio' | 'SizeRatio' | 'Age' | 'Crowding' | 'Random';
+
+export type Comparator = '<' | '>=';
+
+/** One state in an organic's instruction matrix: an action to take, and a test deciding the next state. */
+export interface Instruction {
+  action: Action;
+  sensor: Sensor;
+  comparator: Comparator;
+  threshold: number;
+  jumpOffset: number;
+}
+
+/** A fixed 25-entry (5x5) circular ring of states; index arithmetic wraps modulo this size. */
+export const INSTRUCTION_MATRIX_SIZE = 25;
+
+export type InstructionMatrix = readonly Instruction[];
+
+/**
+ * Wraps `index + offset` into `[0, INSTRUCTION_MATRIX_SIZE)`, matching the instruction
+ * matrix's circular-ring rule in both directions (positive or negative offset).
+ */
+export function wrapMatrixIndex(index: number, offset: number): number {
+  return ((index + offset) % INSTRUCTION_MATRIX_SIZE + INSTRUCTION_MATRIX_SIZE) % INSTRUCTION_MATRIX_SIZE;
+}
