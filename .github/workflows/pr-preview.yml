@@ -1,0 +1,45 @@
+name: PR Preview
+
+# Plain `pull_request` (never `pull_request_target`): PR code is built here, so
+# it must not run with write-scoped secrets from a fork's perspective. Forked
+# PRs get a read-only GITHUB_TOKEN regardless of the `permissions:` block
+# below, so previews for fork PRs require the repo owner to opt in under
+# Settings -> Actions -> General -> "Workflow permissions" (see README).
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-preview-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node
+        if: github.event.action != 'closed'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies (pinned, no lifecycle scripts)
+        if: github.event.action != 'closed'
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        if: github.event.action != 'closed'
+        run: npm run build
+
+      - name: Deploy or remove PR preview
+        uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9 # v1.8.1
+        with:
+          source-dir: ./dist
