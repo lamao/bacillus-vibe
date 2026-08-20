@@ -36,6 +36,7 @@ export function organic(position: Position, overrides: Partial<Organic> = {}): O
     age: 0,
     accumulatedWaste: 0,
     dna: dna(),
+    currentState: 0,
     ...overrides,
   };
 }

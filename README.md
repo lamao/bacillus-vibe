@@ -174,22 +174,28 @@ account owns the analysis.
 
 ## Deployment
 
+Both flows below publish to the same `gh-pages` branch — GitHub Pages
+serves from either a branch or Actions-deploy artifacts, never both, and
+`rossjrw/pr-preview-action` needs the branch-based one. **One manual step
+required**: in this repo's Settings → Pages, set **Source: Deploy from a
+branch**, branch **`gh-pages`**, folder **`/ (root)`** (this can't be done
+from a workflow). Once set, the stable URL is
+`https://<owner>.github.io/<repo>/`.
+
 - **`main`** → [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-  builds the Vite production bundle and deploys it to GitHub Pages via
-  `actions/upload-pages-artifact` + `actions/deploy-pages` on every push.
-  **One manual step required**: in this repo's Settings → Pages, set
-  **Source: GitHub Actions** (this can't be done from a workflow). Once
-  set, the stable URL is `https://<owner>.github.io/<repo>/`.
+  builds the Vite production bundle and pushes it to the root of
+  `gh-pages` on every push, retrying against the latest tip if a
+  concurrent PR-preview push (below) lands first. Leaves any
+  `pr-preview/` subfolders already on the branch untouched.
 - **PRs** → [`.github/workflows/pr-preview.yml`](.github/workflows/pr-preview.yml)
   uses `rossjrw/pr-preview-action` to publish each open PR's build to its
-  own subpath on the `gh-pages` branch (separate from the `main` deploy
-  above, which uses the newer Actions-native Pages flow), posts/updates a
-  PR comment with the preview link, and tears it down when the PR closes.
-  Previews only work for PRs from branches in this repo, not forks —
-  forked PRs get a read-only `GITHUB_TOKEN` by default (this workflow
-  deliberately avoids `pull_request_target` to keep it that way; a repo
-  owner can opt forks in under Settings → Actions → General → Workflow
-  permissions if desired).
+  own subpath (`pr-preview/pr-<n>/`) on the same `gh-pages` branch,
+  posts/updates a PR comment with the preview link, and tears it down when
+  the PR closes. Previews only work for PRs from branches in this repo,
+  not forks — forked PRs get a read-only `GITHUB_TOKEN` by default (this
+  workflow deliberately avoids `pull_request_target` to keep it that way;
+  a repo owner can opt forks in under Settings → Actions → General →
+  Workflow permissions if desired).
 
 No cloud account, no Docker, no server secrets — only the Sonar token
 above.

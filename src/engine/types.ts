@@ -43,6 +43,13 @@ export interface Organic {
   age: number;
   accumulatedWaste: number;
   dna: DNA;
+  /**
+   * Index into the instruction matrix ring (see below) this organic is
+   * currently in. Stubbed at 0 for every organic until the interpreter
+   * (#6) actually advances it; exists so the inspector (#8) has something
+   * to show.
+   */
+  currentState: number;
 }
 
 export type Entity = Mineral | Organic;
