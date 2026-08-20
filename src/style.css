@@ -117,6 +117,10 @@ button[aria-pressed='true'] {
   top: 0.6rem;
   right: 0.6rem;
   width: min(260px, calc(100% - 1.2rem));
+  /* Reserves room for the tallest row set (a full organic, 14 rows) so the box
+     doesn't visibly grow/shrink as the inspected cell's content changes tick to
+     tick (e.g. an organic wanders off, leaving an empty cell or a corpse). */
+  min-height: 19.2rem;
   background: rgba(16, 24, 43, 0.92);
   border: 1px solid var(--border);
   border-radius: 8px;
