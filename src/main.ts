@@ -90,6 +90,7 @@ const speedLabel = document.querySelector<HTMLElement>('#speed-value');
 const statsEl = document.querySelector<HTMLElement>('#stats');
 const canvasWrap = document.querySelector<HTMLElement>('#canvas-wrap');
 const hintEl = document.querySelector<HTMLElement>('#hint');
+const buildInfoEl = document.querySelector<HTMLElement>('#build-info');
 
 if (
   !canvas ||
@@ -103,10 +104,14 @@ if (
   !speedLabel ||
   !statsEl ||
   !canvasWrap ||
-  !hintEl
+  !hintEl ||
+  !buildInfoEl
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
+
+buildInfoEl.textContent = __BUILD_ID__;
+buildInfoEl.title = `Build ${__BUILD_ID__}`;
 
 // The simulation itself (grid, settings, RNG, tick loop) runs off the main thread in a
 // Worker, so rendering stays smooth even when population/speed makes ticking expensive.
