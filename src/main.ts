@@ -1,9 +1,6 @@
-import { randomDNA } from './engine/dna';
-import { DefaultRNG } from './engine/rng';
-import { defaultSettings } from './engine/settings';
-import { Simulation } from './engine/simulation';
 import {
   Action,
+  Entity,
   INSTRUCTION_MATRIX_SIZE,
   Instruction,
   MoveMode,
@@ -14,6 +11,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
 import './style.css';
 
 function formatAction(action: Action): string {
@@ -68,8 +66,6 @@ function formatThreshold(threshold: number): string {
   return Number(threshold.toFixed(2)).toString();
 }
 
-const INITIAL_POPULATION = 150;
-
 /**
  * Discrete tick-rate presets in ticks per second, spaced roughly geometrically
  * so each slider step feels proportionally faster — from a watchable 1 tick/s
@@ -77,9 +73,6 @@ const INITIAL_POPULATION = 150;
  */
 const TICK_RATE_PRESETS = [1, 2, 5, 10, 20, 40, 60, 120, 250, 500, 1000, 1800];
 const DEFAULT_TICK_RATE_INDEX = TICK_RATE_PRESETS.indexOf(60);
-
-/** Caps how much simulated time one frame can catch up on, so an unpaused/backgrounded tab doesn't burst-run thousands of ticks at once. */
-const MAX_CATCH_UP_SECONDS = 0.25;
 
 function formatTickRate(ticksPerSecond: number): string {
   return ticksPerSecond === 1 ? '1 tick/s' : `${ticksPerSecond} ticks/s`;
@@ -115,12 +108,21 @@ if (
   throw new Error('Petri: expected page elements were not found');
 }
 
-const rng = new DefaultRNG();
-const settings = defaultSettings();
-const simulation = new Simulation(settings, rng);
-for (let i = 0; i < INITIAL_POPULATION; i++) {
-  simulation.spawnRandomOrganic();
-}
+// The simulation itself (grid, settings, RNG, tick loop) runs off the main thread in a
+// Worker, so rendering stays smooth even when population/speed makes ticking expensive.
+// The worker pushes a state snapshot roughly once per its own render-loop iteration; the
+// main thread only ever reads the latest one and never mutates simulation state directly.
+const worker = new Worker(new URL('./worker/simulation-worker.ts', import.meta.url), { type: 'module' });
+const postToWorker = (message: WorkerRequest): void => worker.postMessage(message);
+
+let latestSnapshot: SimulationSnapshot | null = null;
+let entityByPosition = new Map<string, Entity>();
+
+worker.onmessage = (event: MessageEvent) => {
+  const message = event.data as WorkerResponse;
+  latestSnapshot = message;
+  entityByPosition = new Map(message.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
+};
 
 const renderer = new Renderer(canvas);
 
@@ -128,8 +130,6 @@ let paused = false;
 let ticksPerSecond = TICK_RATE_PRESETS[DEFAULT_TICK_RATE_INDEX];
 let inspectMode = false;
 let inspectedCell: Position | null = null;
-let tickAccumulator = 0;
-let lastFrameTime: number | null = null;
 /** Instruction matrix state tapped for detail in the inspector; reset whenever a new cell is inspected. */
 let selectedStateIndex: number | null = null;
 
@@ -147,10 +147,11 @@ resizeCanvas();
 pauseBtn.addEventListener('click', () => {
   paused = !paused;
   pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  postToWorker({ type: 'setPaused', paused });
 });
 
 addBtn.addEventListener('click', () => {
-  simulation.spawnRandomOrganic();
+  postToWorker({ type: 'spawnRandomOrganic' });
 });
 
 /** Turns off inspect mode and hides the inspector, however it was entered. */
@@ -186,22 +187,24 @@ speedInput.value = String(DEFAULT_TICK_RATE_INDEX);
 speedInput.addEventListener('input', () => {
   ticksPerSecond = TICK_RATE_PRESETS[Number(speedInput.value)];
   speedLabel.textContent = formatTickRate(ticksPerSecond);
+  postToWorker({ type: 'setTicksPerSecond', ticksPerSecond });
 });
 speedLabel.textContent = formatTickRate(ticksPerSecond);
 
 canvas.addEventListener('pointerdown', (event: PointerEvent) => {
-  const cell = renderer.cellFromClientPoint(event.clientX, event.clientY, simulation.grid);
+  if (!latestSnapshot) return;
+  const cell = renderer.cellFromClientPoint(event.clientX, event.clientY, latestSnapshot);
   if (!cell) return;
   if (inspectMode) {
     inspectedCell = cell;
     selectedStateIndex = null;
   } else {
-    simulation.spawnOrganicAt(cell, randomDNA(rng));
+    postToWorker({ type: 'spawnOrganicAt', position: cell });
   }
 });
 
 function formatStats(): string {
-  const organics = simulation.grid.organics();
+  const organics = (latestSnapshot?.entities ?? []).filter((entity): entity is Organic => entity.kind === 'organic');
   const counts = new Map<Substance, number>();
   for (const organic of organics) {
     counts.set(organic.dna.body, (counts.get(organic.dna.body) ?? 0) + 1);
@@ -211,7 +214,7 @@ function formatStats(): string {
     .map(([substance, count]) => `${substance} ${count}`)
     .join(' · ');
   const suffix = breakdown ? ` · ${breakdown}` : '';
-  return `Tick ${simulation.tickCount} · Population ${organics.length}${suffix}`;
+  return `Tick ${latestSnapshot?.tickCount ?? 0} · Population ${organics.length}${suffix}`;
 }
 
 interface InspectorRow {
@@ -318,7 +321,7 @@ const renderInspector = (): void => {
     return;
   }
 
-  const entity = simulation.grid.get(inspectedCell.x, inspectedCell.y);
+  const entity = entityByPosition.get(`${inspectedCell.x},${inspectedCell.y}`) ?? null;
   const rows: InspectorRow[] = [{ label: 'Cell', value: `${inspectedCell.x}, ${inspectedCell.y}` }];
 
   if (!entity) {
@@ -356,19 +359,8 @@ const renderInspector = (): void => {
   inspectorEl.classList.remove('hidden');
 };
 
-const frame = (time: number): void => {
-  const elapsedSeconds = Math.min(MAX_CATCH_UP_SECONDS, (time - (lastFrameTime ?? time)) / 1000);
-  lastFrameTime = time;
-
-  if (!paused) {
-    tickAccumulator += elapsedSeconds * ticksPerSecond;
-    while (tickAccumulator >= 1) {
-      simulation.step();
-      tickAccumulator -= 1;
-    }
-  }
-
-  renderer.draw(simulation.grid);
+const frame = (): void => {
+  if (latestSnapshot) renderer.draw(latestSnapshot);
   statsEl.textContent = formatStats();
   renderInspector();
   requestAnimationFrame(frame);
