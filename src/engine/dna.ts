@@ -1,8 +1,20 @@
 import { RNG, pick } from './rng';
-import { ALL_SUBSTANCES, DNA, Instruction, InstructionMatrix, MoveMode, PHYSICAL_SUBSTANCES, Substance } from './types';
+import {
+  ALL_SUBSTANCES,
+  Action,
+  DNA,
+  INSTRUCTION_MATRIX_SIZE,
+  Instruction,
+  InstructionMatrix,
+  MoveMode,
+  PHYSICAL_SUBSTANCES,
+  ProduceMode,
+  Sensor,
+  Substance,
+} from './types';
 
 /** Traits that mutate independently; each is picked with equal probability when a mutation occurs. */
-const MUTABLE_TRAITS = ['body', 'consume', 'produce', 'toxin'] as const;
+const MUTABLE_TRAITS = ['body', 'consume', 'produce', 'toxin', 'behavior'] as const;
 type MutableTrait = (typeof MUTABLE_TRAITS)[number];
 
 export function randomPhysicalSubstance(rng: RNG): Substance {
@@ -48,8 +60,86 @@ export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number): DNA {
     case 'toxin':
       child.toxin = randomPhysicalSubstance(rng);
       break;
+    case 'behavior':
+      child.behavior = mutateBehavior(parent.behavior, rng);
+      break;
   }
   return child;
+}
+
+const ACTION_CATEGORIES = ['Move', 'Produce', 'Split', 'Rest'] as const;
+const MOVE_MODES: readonly MoveMode[] = ['TowardConsume', 'AwayFromToxin', 'TowardOpenSpace', 'Random', 'Hold'];
+const PRODUCE_MODES: readonly ProduceMode[] = ['Release', 'Hold'];
+const SENSORS: readonly Sensor[] = ['FoodDist', 'ToxinDist', 'EnergyRatio', 'SizeRatio', 'Age', 'Crowding', 'Random'];
+
+/** Five operators, per #5 §5, each picked with equal probability and applied to exactly one state. */
+const BEHAVIOR_MUTATION_OPERATORS = ['rerollAction', 'rerollMode', 'rerollSensor', 'nudgeThreshold', 'rerollJumpOffset'] as const;
+type BehaviorMutationOperator = (typeof BEHAVIOR_MUTATION_OPERATORS)[number];
+
+/** Standard deviation of the gaussian perturbation `nudgeThreshold` applies to a threshold. */
+export const THRESHOLD_NUDGE_STDDEV = 0.15;
+
+function randomAction(rng: RNG): Action {
+  const category = pick(rng, ACTION_CATEGORIES);
+  switch (category) {
+    case 'Move':
+      return { type: 'Move', mode: pick(rng, MOVE_MODES) };
+    case 'Produce':
+      return { type: 'Produce', mode: pick(rng, PRODUCE_MODES) };
+    case 'Split':
+      return { type: 'Split', mode: 'Attempt' };
+    case 'Rest':
+      return { type: 'Rest' };
+  }
+}
+
+/** Keeps `action`'s category, picking a fresh mode. Split has one mode and Rest has none, so both are no-ops. */
+function rerollMode(action: Action, rng: RNG): Action {
+  switch (action.type) {
+    case 'Move':
+      return { type: 'Move', mode: pick(rng, MOVE_MODES) };
+    case 'Produce':
+      return { type: 'Produce', mode: pick(rng, PRODUCE_MODES) };
+    case 'Split':
+    case 'Rest':
+      return action;
+  }
+}
+
+/** A standard-normal sample (Box-Muller) scaled by `stdDev`; clamps away from 0 to avoid -Infinity in the log. */
+function gaussianNudge(rng: RNG, stdDev: number): number {
+  const u1 = Math.max(rng.next(), Number.EPSILON);
+  const u2 = rng.next();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * stdDev;
+}
+
+/** A fresh jump offset spanning the ring both ways; `wrapMatrixIndex` normalizes it wherever it's applied. */
+function randomJumpOffset(rng: RNG): number {
+  return rng.int(2 * INSTRUCTION_MATRIX_SIZE + 1) - INSTRUCTION_MATRIX_SIZE;
+}
+
+function applyBehaviorOperator(operator: BehaviorMutationOperator, instruction: Instruction, rng: RNG): Instruction {
+  switch (operator) {
+    case 'rerollAction':
+      return { ...instruction, action: randomAction(rng) };
+    case 'rerollMode':
+      return { ...instruction, action: rerollMode(instruction.action, rng) };
+    case 'rerollSensor':
+      return { ...instruction, sensor: pick(rng, SENSORS) };
+    case 'nudgeThreshold':
+      return { ...instruction, threshold: instruction.threshold + gaussianNudge(rng, THRESHOLD_NUDGE_STDDEV) };
+    case 'rerollJumpOffset':
+      return { ...instruction, jumpOffset: randomJumpOffset(rng) };
+  }
+}
+
+/** Applies one randomly chosen mutation operator (per #5 §5) to exactly one randomly chosen state. */
+function mutateBehavior(behavior: InstructionMatrix, rng: RNG): InstructionMatrix {
+  const stateIndex = rng.int(INSTRUCTION_MATRIX_SIZE);
+  const operator = pick(rng, BEHAVIOR_MUTATION_OPERATORS);
+  const next = [...behavior];
+  next[stateIndex] = applyBehaviorOperator(operator, next[stateIndex], rng);
+  return next;
 }
 
 /**
