@@ -36,7 +36,6 @@ export function dna(overrides: Partial<DNA> = {}): DNA {
     consume: 'Green',
     produce: 'Yellow',
     toxin: 'Red',
-    canMove: true,
     behavior: restBehavior(),
     ...overrides,
   };

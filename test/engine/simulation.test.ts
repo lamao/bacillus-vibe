@@ -15,7 +15,7 @@ describe('tick', () => {
   it('ages a stationary Sun-eating organic and lets it starve of old age', () => {
     const settings = testSettings({ maxAge: 2, permanentConsumption: 0, sunYield: 0 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { dna: dna({ consume: 'Sun', canMove: false }), energy: 100, age: 0 });
+    const o = organic({ x: 5, y: 5 }, { dna: dna({ consume: 'Sun' }), energy: 100, age: 0 });
     place(grid, o);
     let idc = 0;
     tick(grid, settings, new MockRNG([0.5]), () => idc++);
@@ -93,7 +93,7 @@ describe('Simulation', () => {
   it('step() advances the tick counter and mutates the grid', () => {
     const settings = testSettings({ permanentConsumption: 10 });
     const sim = new Simulation(settings, new MockRNG([0.5]));
-    const o = sim.spawnOrganicAt({ x: 5, y: 5 }, dna({ canMove: false, consume: 'Green' }));
+    const o = sim.spawnOrganicAt({ x: 5, y: 5 }, dna({ consume: 'Green' }));
     const before = o?.energy ?? 0;
     sim.step();
     expect(sim.tickCount).toBe(1);

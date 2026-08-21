@@ -19,8 +19,6 @@ export interface DNA {
   produce: Substance;
   /** Which substance damages this organic. Never Sun. */
   toxin: Substance;
-  /** Whether this organic actively moves/hunts, or passively digests nearby matter. */
-  canMove: boolean;
   /** This organic's finite-state behavior program; see InstructionMatrix below. */
   behavior: InstructionMatrix;
 }
