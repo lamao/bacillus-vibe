@@ -90,6 +90,8 @@ const pauseBtn = document.querySelector<HTMLButtonElement>('#pause-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
 const inspectorEl = document.querySelector<HTMLElement>('#inspector');
+const inspectorContentEl = document.querySelector<HTMLElement>('#inspector-content');
+const inspectorCloseBtn = document.querySelector<HTMLButtonElement>('#inspector-close');
 const speedInput = document.querySelector<HTMLInputElement>('#speed');
 const speedLabel = document.querySelector<HTMLElement>('#speed-value');
 const statsEl = document.querySelector<HTMLElement>('#stats');
@@ -102,6 +104,8 @@ if (
   !addBtn ||
   !inspectBtn ||
   !inspectorEl ||
+  !inspectorContentEl ||
+  !inspectorCloseBtn ||
   !speedInput ||
   !speedLabel ||
   !statsEl ||
@@ -149,17 +153,30 @@ addBtn.addEventListener('click', () => {
   simulation.spawnRandomOrganic();
 });
 
+/** Turns off inspect mode and hides the inspector, however it was entered. */
+const exitInspectMode = (): void => {
+  inspectMode = false;
+  inspectBtn.setAttribute('aria-pressed', 'false');
+  inspectBtn.textContent = 'Inspect';
+  canvas.classList.remove('inspecting');
+  hintEl.textContent = 'Tap the grid to add a creature';
+  inspectedCell = null;
+  selectedStateIndex = null;
+};
+
 inspectBtn.addEventListener('click', () => {
-  inspectMode = !inspectMode;
-  inspectBtn.setAttribute('aria-pressed', String(inspectMode));
-  inspectBtn.textContent = inspectMode ? 'Inspecting…' : 'Inspect';
-  canvas.classList.toggle('inspecting', inspectMode);
-  hintEl.textContent = inspectMode ? 'Tap a cell to inspect it' : 'Tap the grid to add a creature';
-  if (!inspectMode) {
-    inspectedCell = null;
-    selectedStateIndex = null;
+  if (inspectMode) {
+    exitInspectMode();
+    return;
   }
+  inspectMode = true;
+  inspectBtn.setAttribute('aria-pressed', 'true');
+  inspectBtn.textContent = 'Inspecting…';
+  canvas.classList.add('inspecting');
+  hintEl.textContent = 'Tap a cell to inspect it';
 });
+
+inspectorCloseBtn.addEventListener('click', exitInspectMode);
 
 speedInput.min = '0';
 speedInput.max = String(TICK_RATE_PRESETS.length - 1);
@@ -334,7 +351,7 @@ const renderInspector = (): void => {
     if (entity?.kind === 'organic') {
       children.push(buildMatrixSection(entity));
     }
-    inspectorEl.replaceChildren(...children);
+    inspectorContentEl.replaceChildren(...children);
   }
   inspectorEl.classList.remove('hidden');
 };
