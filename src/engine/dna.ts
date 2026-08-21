@@ -20,6 +20,9 @@ export function randomDNA(rng: RNG): DNA {
     produce: randomPhysicalSubstance(rng),
     toxin: randomPhysicalSubstance(rng),
     canMove: rng.next() < 0.5,
+    // Stand-in until #11 switches seeding over to the single fixed starter
+    // genome (per #5's "one hardcoded preset" decision) instead of a per-organic one.
+    behavior: starterInstructionMatrix(),
   };
 }
 
