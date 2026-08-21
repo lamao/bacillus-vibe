@@ -11,7 +11,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
-import { SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
+import { RENDER_FPS, SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
 import './style.css';
 
 function formatAction(action: Action): string {
@@ -401,7 +401,21 @@ const renderInspector = (): void => {
   inspectorEl.classList.remove('hidden');
 };
 
+// Drawing and DOM updates only happen at most RENDER_FPS times/sec — this simulation's
+// visuals don't need a full display refresh rate, and skipping the work (not just the
+// display of it) saves real CPU. requestAnimationFrame still reschedules every native
+// frame regardless, since that's the only way to keep sampling wall-clock time for the
+// throttle check.
+const FRAME_INTERVAL_MS = 1000 / RENDER_FPS;
+let lastRenderTime: number | null = null;
+
 const frame = (time: number): void => {
+  if (lastRenderTime !== null && time - lastRenderTime < FRAME_INTERVAL_MS) {
+    requestAnimationFrame(frame);
+    return;
+  }
+  lastRenderTime = time;
+
   fps = fpsMeter.sample(time, 1);
   if (latestSnapshot) {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);

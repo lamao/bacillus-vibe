@@ -1,5 +1,8 @@
 import { GridView, Position } from '../engine/types';
 
+/** How often the worker posts a render snapshot, and how often the main thread renders one — shared so neither side does work the other can't use. */
+export const RENDER_FPS = 30;
+
 /** Messages the main thread sends to the simulation worker. */
 export type WorkerRequest =
   | { type: 'setPaused'; paused: boolean }

@@ -1,15 +1,31 @@
 import { DefaultRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
-import { WorkerRequest, SimulationSnapshot } from './protocol';
+import { RENDER_FPS, WorkerRequest, SimulationSnapshot } from './protocol';
 
 const INITIAL_POPULATION = 150;
 
-/** Caps how much simulated time one loop iteration can catch up on, so a throttled/backgrounded worker doesn't burst-run thousands of ticks at once. */
+/**
+ * Caps how much simulated-time debt `tickAccumulator` may ever hold, so it can never
+ * grow unboundedly when the target tick rate outpaces what the worker can actually
+ * compute. Without this cap, running at a high rate for a while (more debt added per
+ * call than the tick budget below can drain) builds a backlog that a later, lower
+ * ticksPerSecond can't shrink — since a lower rate only slows how much MORE debt gets
+ * added, it doesn't touch what's already queued, so the sim keeps running flat-out
+ * until that backlog empties instead of actually slowing down. Recomputed from the
+ * current ticksPerSecond every call, so lowering the target also lowers the cap and
+ * the backlog gets clamped down (not drained down) within one call.
+ *
+ * The cap is floored at 1 tick's worth (see MIN_ACCUMULATOR_CAP below): at the two
+ * slowest presets (1-2 ticks/s), 0.25 * ticksPerSecond is below 1, which would make
+ * tickAccumulator mathematically unable to ever reach the >= 1 threshold that lets a
+ * tick run at all — stalling the simulation completely instead of just slowing it down.
+ */
 const MAX_CATCH_UP_SECONDS = 0.25;
+const MIN_ACCUMULATOR_CAP = 1;
 
 /** How often the worker posts a render snapshot to the main thread, independent of tick rate. */
-const SNAPSHOT_INTERVAL_MS = 1000 / 60;
+const SNAPSHOT_INTERVAL_MS = 1000 / RENDER_FPS;
 
 /**
  * Caps how long one `loop()` invocation may spend ticking, regardless of how large a
@@ -74,11 +90,15 @@ function postSnapshotIfDue(): void {
 
 function loop(): void {
   const now = performance.now();
-  const elapsedSeconds = Math.min(MAX_CATCH_UP_SECONDS, (now - (lastLoopTime ?? now)) / 1000);
+  // No need to clamp this: however large a single call's elapsed real time is (e.g. a
+  // backgrounded/throttled tab), the tickAccumulator clamp below bounds the result the
+  // same way regardless.
+  const elapsedSeconds = (now - (lastLoopTime ?? now)) / 1000;
   lastLoopTime = now;
 
   if (!paused) {
-    tickAccumulator += elapsedSeconds * ticksPerSecond;
+    const accumulatorCap = Math.max(MIN_ACCUMULATOR_CAP, MAX_CATCH_UP_SECONDS * ticksPerSecond);
+    tickAccumulator = Math.min(tickAccumulator + elapsedSeconds * ticksPerSecond, accumulatorCap);
     const budgetEnd = now + TICK_BUDGET_MS;
     while (tickAccumulator >= 1 && performance.now() < budgetEnd) {
       simulation.step();
