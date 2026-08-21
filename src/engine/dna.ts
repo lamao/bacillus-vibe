@@ -2,7 +2,7 @@ import { RNG, pick } from './rng';
 import { ALL_SUBSTANCES, DNA, Instruction, InstructionMatrix, MoveMode, PHYSICAL_SUBSTANCES, Substance } from './types';
 
 /** Traits that mutate independently; each is picked with equal probability when a mutation occurs. */
-const MUTABLE_TRAITS = ['body', 'consume', 'produce', 'toxin', 'canMove'] as const;
+const MUTABLE_TRAITS = ['body', 'consume', 'produce', 'toxin'] as const;
 type MutableTrait = (typeof MUTABLE_TRAITS)[number];
 
 export function randomPhysicalSubstance(rng: RNG): Substance {
@@ -19,9 +19,7 @@ export function randomDNA(rng: RNG): DNA {
     consume: randomConsumeSubstance(rng),
     produce: randomPhysicalSubstance(rng),
     toxin: randomPhysicalSubstance(rng),
-    canMove: rng.next() < 0.5,
-    // Stand-in until #11 switches seeding over to the single fixed starter
-    // genome (per #5's "one hardcoded preset" decision) instead of a per-organic one.
+    // Per #5's "Resolved" decision: one hardcoded starter genome, not randomized.
     behavior: starterInstructionMatrix(),
   };
 }
@@ -50,9 +48,6 @@ export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number): DNA {
     case 'toxin':
       child.toxin = randomPhysicalSubstance(rng);
       break;
-    case 'canMove':
-      child.canMove = rng.next() < 0.5;
-      break;
   }
   return child;
 }
@@ -60,8 +55,7 @@ export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number): DNA {
 /**
  * The single hand-built starter genome copied into every organic in the initial
  * population (see #5's "Resolved" decision — not random, mutation introduces
- * variety from here). Not wired into `randomDNA`/seeding yet; that lands once the
- * interpreter phase actually reads `behavior` (#6).
+ * variety from here).
  *
  * Roughly five loops chained by the ring's default "false -> current + 1" advance,
  * shortcut by "true" jumps into whichever loop the test calls for:
