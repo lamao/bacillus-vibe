@@ -18,7 +18,10 @@
       <main>
         <div id="canvas-wrap">
           <canvas id="grid-canvas"></canvas>
-          <div id="inspector" class="inspector hidden" aria-live="polite"></div>
+          <div id="inspector" class="inspector hidden" aria-live="polite">
+            <button id="inspector-close" type="button" class="inspector-close" aria-label="Close inspector">&times;</button>
+            <div id="inspector-content"></div>
+          </div>
         </div>
       </main>
       <footer id="controls">
