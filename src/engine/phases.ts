@@ -65,31 +65,54 @@ function foodDistance(organic: Organic, grid: Grid, settings: Settings): number 
   return nearest;
 }
 
-/**
- * Reads one instruction's sensor. Only `FoodDist` and `Random` are implemented
- * for this subtask's minimal slice (#9); the rest read as 0 until #13 fills
- * out the remaining sensors.
- */
+/** Chebyshev distance to the nearest entity matching `dna.toxin` within toxin range, or `toxinRange` if none is found. */
+function toxinDistance(organic: Organic, grid: Grid, settings: Settings): number {
+  const candidates = grid
+    .entitiesInRange(organic.position, settings.toxinRange)
+    .filter((e) => e !== organic && substanceOf(e) === organic.dna.toxin);
+
+  let nearest = settings.toxinRange;
+  for (const candidate of candidates) {
+    nearest = Math.min(nearest, chebyshevDistance(organic.position, candidate.position));
+  }
+  return nearest;
+}
+
+/** Count of other organics within vision range. */
+function crowding(organic: Organic, grid: Grid, settings: Settings): number {
+  return grid.entitiesInRange(organic.position, settings.visionRange).filter((e) => e !== organic && e.kind === 'organic').length;
+}
+
+/** Reads one instruction's sensor, per #5 §4's table. */
 function evaluateSensor(sensor: Sensor, organic: Organic, grid: Grid, settings: Settings, rng: RNG): number {
   switch (sensor) {
     case 'FoodDist':
       return foodDistance(organic, grid, settings);
+    case 'ToxinDist':
+      return toxinDistance(organic, grid, settings);
+    case 'EnergyRatio':
+      return organic.energy / organic.size;
+    case 'SizeRatio':
+      return organic.size / settings.maxSize;
+    case 'Age':
+      return organic.age / settings.maxAge;
+    case 'Crowding':
+      return crowding(organic, grid, settings);
     case 'Random':
       return rng.next();
-    default:
-      return 0;
   }
 }
 
-/**
- * Resolves the direction a `Move` action steps in this tick. Only `TowardConsume`
- * (target the largest matching-`consume` entity within vision range, same scan
- * the old `decideDirections` did) and `Hold` (never move) are implemented for
- * this subtask's minimal slice (#9); the remaining modes hold until #13.
- */
-function resolveMoveDirection(mode: MoveMode, organic: Organic, grid: Grid, settings: Settings): Position | null {
-  if (mode !== 'TowardConsume') return null;
+/** Chebyshev unit step from `from` toward `to`, or `null` if the stepped-to cell is off-grid. */
+function stepToward(from: Position, to: Position, grid: Grid): Position | null {
+  const direction = { x: sign(to.x - from.x), y: sign(to.y - from.y) };
+  const tx = from.x + direction.x;
+  const ty = from.y + direction.y;
+  return grid.inBounds(tx, ty) ? direction : null;
+}
 
+/** Steps toward the largest entity matching `dna.consume` within vision range, or `null` if none is in range. */
+function towardConsume(organic: Organic, grid: Grid, settings: Settings): Position | null {
   const candidates = grid
     .entitiesInRange(organic.position, settings.visionRange)
     .filter((e) => e !== organic && substanceOf(e) === organic.dna.consume);
@@ -98,12 +121,74 @@ function resolveMoveDirection(mode: MoveMode, organic: Organic, grid: Grid, sett
   for (const candidate of candidates) {
     if (!target || candidate.size > target.size) target = candidate;
   }
-  if (!target) return null;
+  return target ? stepToward(organic.position, target.position, grid) : null;
+}
 
-  const direction = { x: sign(target.position.x - organic.position.x), y: sign(target.position.y - organic.position.y) };
+/**
+ * Steps away from the nearest entity matching `dna.toxin` within vision range, or
+ * `null` if none is in range. `entitiesInRange` returns nearest-first, so the first
+ * match is the nearest threat.
+ */
+function awayFromToxin(organic: Organic, grid: Grid, settings: Settings): Position | null {
+  const nearest = grid
+    .entitiesInRange(organic.position, settings.visionRange)
+    .find((e) => e !== organic && substanceOf(e) === organic.dna.toxin);
+  if (!nearest) return null;
+
+  const direction = { x: -sign(nearest.position.x - organic.position.x), y: -sign(nearest.position.y - organic.position.y) };
   const tx = organic.position.x + direction.x;
   const ty = organic.position.y + direction.y;
   return grid.inBounds(tx, ty) ? direction : null;
+}
+
+/**
+ * Steps into the free adjacent cell with the fewest other entities within vision
+ * range of it (least crowded), or `null` if every adjacent cell is occupied.
+ * Ties go to the first candidate scanned (row-major over dy then dx).
+ */
+function towardOpenSpace(organic: Organic, grid: Grid, settings: Settings): Position | null {
+  let best: Position | null = null;
+  let bestCrowding = Infinity;
+
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const tx = organic.position.x + dx;
+      const ty = organic.position.y + dy;
+      if (!grid.isFree(tx, ty)) continue;
+
+      const nearby = grid.entitiesInRange({ x: tx, y: ty }, settings.visionRange).length;
+      if (nearby < bestCrowding) {
+        bestCrowding = nearby;
+        best = { x: dx, y: dy };
+      }
+    }
+  }
+  return best;
+}
+
+/** Steps in a uniformly random direction, or `null` if the stepped-to cell is off-grid. */
+function randomStep(organic: Organic, grid: Grid, rng: RNG): Position | null {
+  const direction = randomOffsetInRange(rng, 1);
+  const tx = organic.position.x + direction.x;
+  const ty = organic.position.y + direction.y;
+  return grid.inBounds(tx, ty) ? direction : null;
+}
+
+/** Resolves the direction a `Move` action steps in this tick, per #5 §3's table. */
+function resolveMoveDirection(mode: MoveMode, organic: Organic, grid: Grid, settings: Settings, rng: RNG): Position | null {
+  switch (mode) {
+    case 'TowardConsume':
+      return towardConsume(organic, grid, settings);
+    case 'AwayFromToxin':
+      return awayFromToxin(organic, grid, settings);
+    case 'TowardOpenSpace':
+      return towardOpenSpace(organic, grid, settings);
+    case 'Random':
+      return randomStep(organic, grid, rng);
+    case 'Hold':
+      return null;
+  }
 }
 
 /**
@@ -118,7 +203,7 @@ export function decideAction(grid: Grid, settings: Settings, rng: RNG): void {
     const instruction = organic.dna.behavior[organic.currentState];
     organic.chosenAction = instruction.action;
     organic.direction =
-      instruction.action.type === 'Move' ? resolveMoveDirection(instruction.action.mode, organic, grid, settings) : null;
+      instruction.action.type === 'Move' ? resolveMoveDirection(instruction.action.mode, organic, grid, settings, rng) : null;
 
     const sensorValue = evaluateSensor(instruction.sensor, organic, grid, settings, rng);
     const testPassed = instruction.comparator === '<' ? sensorValue < instruction.threshold : sensorValue >= instruction.threshold;
@@ -159,13 +244,16 @@ export function moveOrganics(grid: Grid, settings: Settings): void {
 }
 
 /**
- * Phase 3: organics at or above ReproductionThreshold spend a randomized
- * DefaultSize (+/-25%) chunk of energy to attempt a split. A single random cell
- * within ReproductionRange is tried; if it's occupied or off-grid the split is
+ * Phase 3: organics whose chosen action this tick was `Split` (Attempt) and who
+ * are at or above ReproductionThreshold spend a randomized DefaultSize (+/-25%)
+ * chunk of energy to attempt a split. A single random cell within
+ * ReproductionRange is tried; if it's occupied or off-grid the split is
  * abandoned and part of the spent energy is refunded.
  */
 export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): void {
-  const candidates = grid.organics().filter((o) => o.energy >= settings.reproductionThreshold);
+  const candidates = grid
+    .organics()
+    .filter((o) => o.chosenAction?.type === 'Split' && o.energy >= settings.reproductionThreshold);
 
   for (const parent of candidates) {
     const spent = settings.defaultSize * (1 + (rng.next() * 0.5 - 0.25));
@@ -230,12 +318,16 @@ export function consume(grid: Grid, settings: Settings): void {
 }
 
 /**
- * Phase 5: organics with accumulated waste try to dump it within ProductionRange,
- * topping up matching minerals first, then creating new ones in free cells.
- * Waste that still can't be placed poisons the organic directly.
+ * Phase 5: organics whose chosen action this tick was `Produce` (Release) try to
+ * dump their accumulated waste within ProductionRange, topping up matching
+ * minerals first, then creating new ones in free cells. Waste that still can't
+ * be placed poisons the organic directly. Organics that chose `Produce` (Hold),
+ * or any other action, keep hoarding: their waste stays accumulated for a later
+ * Release tick.
  */
 export function produceWaste(grid: Grid, settings: Settings): void {
   for (const organic of grid.organics()) {
+    if (organic.chosenAction?.type !== 'Produce' || organic.chosenAction.mode !== 'Release') continue;
     if (organic.accumulatedWaste <= 0) continue;
     let remaining = organic.accumulatedWaste;
 
