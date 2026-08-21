@@ -20,7 +20,21 @@ function formatAction(action: Action): string {
 }
 
 const INITIAL_POPULATION = 150;
-const MAX_TICKS_PER_FRAME = 30;
+
+/**
+ * Discrete tick-rate presets in ticks per second, spaced roughly geometrically
+ * so each slider step feels proportionally faster — from a watchable 1 tick/s
+ * up to 1800 (the previous fastest speed: 30 ticks/frame at 60fps).
+ */
+const TICK_RATE_PRESETS = [1, 2, 5, 10, 20, 40, 60, 120, 250, 500, 1000, 1800];
+const DEFAULT_TICK_RATE_INDEX = TICK_RATE_PRESETS.indexOf(60);
+
+/** Caps how much simulated time one frame can catch up on, so an unpaused/backgrounded tab doesn't burst-run thousands of ticks at once. */
+const MAX_CATCH_UP_SECONDS = 0.25;
+
+function formatTickRate(ticksPerSecond: number): string {
+  return ticksPerSecond === 1 ? '1 tick/s' : `${ticksPerSecond} ticks/s`;
+}
 
 const canvas = document.querySelector<HTMLCanvasElement>('#grid-canvas');
 const pauseBtn = document.querySelector<HTMLButtonElement>('#pause-btn');
@@ -58,9 +72,11 @@ for (let i = 0; i < INITIAL_POPULATION; i++) {
 const renderer = new Renderer(canvas);
 
 let paused = false;
-let ticksPerFrame = Number(speedInput.value);
+let ticksPerSecond = TICK_RATE_PRESETS[DEFAULT_TICK_RATE_INDEX];
 let inspectMode = false;
 let inspectedCell: Position | null = null;
+let tickAccumulator = 0;
+let lastFrameTime: number | null = null;
 
 // A ResizeObserver (rather than only window 'resize'/'orientationchange') tracks
 // canvas-wrap's actual box, so the canvas stays correctly sized even when layout
@@ -91,11 +107,16 @@ inspectBtn.addEventListener('click', () => {
   if (!inspectMode) inspectedCell = null;
 });
 
+speedInput.min = '0';
+speedInput.max = String(TICK_RATE_PRESETS.length - 1);
+speedInput.step = '1';
+speedInput.value = String(DEFAULT_TICK_RATE_INDEX);
+
 speedInput.addEventListener('input', () => {
-  ticksPerFrame = Math.min(MAX_TICKS_PER_FRAME, Number(speedInput.value));
-  speedLabel.textContent = `${ticksPerFrame}x`;
+  ticksPerSecond = TICK_RATE_PRESETS[Number(speedInput.value)];
+  speedLabel.textContent = formatTickRate(ticksPerSecond);
 });
-speedLabel.textContent = `${ticksPerFrame}x`;
+speedLabel.textContent = formatTickRate(ticksPerSecond);
 
 canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   const cell = renderer.cellFromClientPoint(event.clientX, event.clientY, simulation.grid);
@@ -180,10 +201,18 @@ const renderInspector = (): void => {
   inspectorEl.classList.remove('hidden');
 };
 
-const frame = (): void => {
+const frame = (time: number): void => {
+  const elapsedSeconds = Math.min(MAX_CATCH_UP_SECONDS, (time - (lastFrameTime ?? time)) / 1000);
+  lastFrameTime = time;
+
   if (!paused) {
-    for (let i = 0; i < ticksPerFrame; i++) simulation.step();
+    tickAccumulator += elapsedSeconds * ticksPerSecond;
+    while (tickAccumulator >= 1) {
+      simulation.step();
+      tickAccumulator -= 1;
+    }
   }
+
   renderer.draw(simulation.grid);
   statsEl.textContent = formatStats();
   renderInspector();
