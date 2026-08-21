@@ -2,21 +2,51 @@ import { describe, expect, it } from 'vitest';
 import { produceWaste } from '../../src/engine/phases';
 import { dna, emptyGrid, mineral, organic, place, testSettings } from './fixtures';
 
+const release = { type: 'Produce' as const, mode: 'Release' as const };
+const hold = { type: 'Produce' as const, mode: 'Hold' as const };
+
 describe('produceWaste (phase 5)', () => {
   it('does nothing when there is no accumulated waste', () => {
     const settings = testSettings();
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 0, energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 0, energy: 500, chosenAction: release });
     place(grid, o);
     produceWaste(grid, settings);
     expect(o.energy).toBe(500);
     expect(grid.entities()).toHaveLength(1);
   });
 
+  it("keeps hoarding accumulated waste when the chosen action is Produce (Hold)", () => {
+    const settings = testSettings({ productionRange: 1, maxSize: 2200 });
+    const grid = emptyGrid(settings);
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: hold });
+    const dump = mineral({ x: 5, y: 6 }, 'Yellow', 100);
+    place(grid, o, dump);
+    produceWaste(grid, settings);
+    expect(dump.size).toBe(100);
+    expect(o.accumulatedWaste).toBe(50);
+    expect(o.energy).toBe(500);
+  });
+
+  it("keeps hoarding accumulated waste when the chosen action isn't Produce at all", () => {
+    const settings = testSettings({ productionRange: 1, maxSize: 2200 });
+    const grid = emptyGrid(settings);
+    const o = organic(
+      { x: 5, y: 5 },
+      { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: { type: 'Rest' } },
+    );
+    const dump = mineral({ x: 5, y: 6 }, 'Yellow', 100);
+    place(grid, o, dump);
+    produceWaste(grid, settings);
+    expect(dump.size).toBe(100);
+    expect(o.accumulatedWaste).toBe(50);
+    expect(o.energy).toBe(500);
+  });
+
   it('tops up an existing matching mineral within ProductionRange', () => {
     const settings = testSettings({ productionRange: 1, maxSize: 2200 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
     const dump = mineral({ x: 5, y: 6 }, 'Yellow', 100);
     place(grid, o, dump);
     produceWaste(grid, settings);
@@ -28,7 +58,7 @@ describe('produceWaste (phase 5)', () => {
   it('stops topping up minerals once the waste is fully placed', () => {
     const settings = testSettings({ productionRange: 1, maxSize: 2200 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 5, dna: dna({ produce: 'Yellow' }), energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 5, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
     const first = mineral({ x: 5, y: 6 }, 'Yellow', 100);
     const second = mineral({ x: 6, y: 6 }, 'Yellow', 100);
     place(grid, o, first, second);
@@ -42,7 +72,7 @@ describe('produceWaste (phase 5)', () => {
   it('spills remaining waste into new minerals in free cells once matching minerals are full', () => {
     const settings = testSettings({ productionRange: 1, maxSize: 110 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
     const full = mineral({ x: 5, y: 6 }, 'Yellow', 100); // only 10 of room left
     place(grid, o, full);
     produceWaste(grid, settings);
@@ -59,7 +89,7 @@ describe('produceWaste (phase 5)', () => {
   it('self-poisons the organic when waste cannot be placed anywhere', () => {
     const settings = testSettings({ productionRange: 1 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
     place(grid, o);
     // Surround with unrelated organics so there are no free cells and no matching minerals.
     for (const p of grid.positionsInRange(5, 5, 1)) {
@@ -73,7 +103,7 @@ describe('produceWaste (phase 5)', () => {
   it('partially fills one new mineral (capped at maxSize) then self-poisons with the rest', () => {
     const settings = testSettings({ productionRange: 1, maxSize: 30 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
     place(grid, o);
     // Occupy every neighbor except (6,6), which stays the sole free cell.
     for (const p of grid.positionsInRange(5, 5, 1)) {
