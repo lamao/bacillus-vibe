@@ -79,7 +79,7 @@ main {
 }
 
 #grid-canvas.inspecting {
-  cursor: help;
+  cursor: zoom-in;
 }
 
 footer#controls {
