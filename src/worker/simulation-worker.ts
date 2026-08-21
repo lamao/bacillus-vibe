@@ -21,6 +21,7 @@ let paused = false;
 let ticksPerSecond = 60;
 let tickAccumulator = 0;
 let lastLoopTime: number | null = null;
+let lastPostTime: number | null = null;
 
 self.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerRequest;
@@ -49,6 +50,15 @@ function postSnapshot(): void {
     entities: simulation.grid.entities(),
   };
   self.postMessage(snapshot);
+  lastPostTime = performance.now();
+}
+
+/** Posts a snapshot only if a render interval's worth of wall-clock time has passed since the last one — keeps a fast tick batch from flooding postMessage, without ever waiting on more than one render interval's worth of slow ticks. */
+function postSnapshotIfDue(): void {
+  const now = performance.now();
+  if (lastPostTime === null || now - lastPostTime >= SNAPSHOT_INTERVAL_MS) {
+    postSnapshot();
+  }
 }
 
 function loop(): void {
@@ -61,10 +71,13 @@ function loop(): void {
     while (tickAccumulator >= 1) {
       simulation.step();
       tickAccumulator -= 1;
+      // Posted per tick (not just once after the batch) so a slow tick still shows up as
+      // soon as it completes, instead of waiting for the whole catch-up batch to finish.
+      postSnapshotIfDue();
     }
   }
 
-  postSnapshot();
+  postSnapshotIfDue();
 }
 
 postSnapshot();
