@@ -11,6 +11,17 @@ const MAX_CATCH_UP_SECONDS = 0.25;
 /** How often the worker posts a render snapshot to the main thread, independent of tick rate. */
 const SNAPSHOT_INTERVAL_MS = 1000 / 60;
 
+/**
+ * Caps how long one `loop()` invocation may spend ticking, regardless of how large a
+ * backlog `tickAccumulator` holds. Without this, a large population + high tick rate
+ * can build a backlog whose ticks (and their snapshot posts) take, in total, far longer
+ * than one `setInterval` period to drain — during which the worker's single JS thread
+ * never returns to its event loop, so it can't process incoming control messages
+ * (pause, speed, spawn) either. Any backlog left over after the budget runs out simply
+ * carries over to the next `loop()` call instead of being forced through in one go.
+ */
+const TICK_BUDGET_MS = SNAPSHOT_INTERVAL_MS / 2;
+
 const settings = defaultSettings();
 const simulation = new Simulation(settings, new DefaultRNG());
 for (let i = 0; i < INITIAL_POPULATION; i++) {
@@ -68,7 +79,8 @@ function loop(): void {
 
   if (!paused) {
     tickAccumulator += elapsedSeconds * ticksPerSecond;
-    while (tickAccumulator >= 1) {
+    const budgetEnd = now + TICK_BUDGET_MS;
+    while (tickAccumulator >= 1 && performance.now() < budgetEnd) {
       simulation.step();
       tickAccumulator -= 1;
       // Posted per tick (not just once after the batch) so a slow tick still shows up as
