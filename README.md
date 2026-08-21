@@ -46,14 +46,22 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   - `simulation.ts` — orchestrates the phases into one `tick()`, plus a
     `Simulation` class wrapping grid + settings + RNG + id/tick counters
     for the UI to drive.
-- **`src/ui/`** — Canvas2D renderer (`renderer.ts`) that reads engine
-  state and draws it; organics render brighter with a white outline,
-  minerals render dimmer and borderless, both colored by substance.
+- **`src/ui/`** — Canvas2D renderer (`renderer.ts`) that reads a `GridView`
+  (`src/engine/types.ts` — just `width`/`height`/`entities`, decoupled from
+  the `Grid` class) and draws it; organics render brighter with a white
+  outline, minerals render dimmer and borderless, both colored by substance.
+- **`src/worker/`** — the `Simulation` (grid, settings, RNG, tick loop) runs
+  off the main thread in a dedicated Worker (`simulation-worker.ts`), so
+  rendering stays smooth regardless of population size or tick rate. The
+  worker owns simulation state exclusively; the main thread never mutates it
+  directly, only sends control messages (pause, speed, spawn) and receives
+  state snapshots — see `protocol.ts` for the message shapes.
 - **`src/main.ts`** — wires the renderer to a `requestAnimationFrame` loop
-  decoupled from the tick rate (a speed slider sets ticks-per-frame, not
-  frames-per-second), seeds an initial population, and hooks up controls:
-  pause/resume, add-random-creature, and pointer-based tap/click-to-add
-  directly on the grid (works with touch and mouse alike).
+  that draws whatever snapshot the worker last posted (decoupled from the
+  worker's own tick rate, which a speed slider controls via a
+  `setTicksPerSecond` message, not frames-per-second), and hooks up
+  controls: pause/resume, add-random-creature, and pointer-based tap/
+  click-to-add directly on the grid (works with touch and mouse alike).
 
 ## Domain model summary
 

@@ -1,5 +1,4 @@
-import { Grid } from '../engine/grid';
-import { Position, Substance, substanceOf } from '../engine/types';
+import { GridView, Position, Substance, substanceOf } from '../engine/types';
 
 export const SUBSTANCE_COLORS: Record<Substance, string> = {
   Sun: '#fbbf24',
@@ -33,7 +32,7 @@ export class Renderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  private layout(grid: Grid): { cellSize: number; offsetX: number; offsetY: number; cssWidth: number; cssHeight: number } {
+  private layout(grid: GridView): { cellSize: number; offsetX: number; offsetY: number; cssWidth: number; cssHeight: number } {
     const dpr = window.devicePixelRatio || 1;
     const cssWidth = this.canvas.width / dpr;
     const cssHeight = this.canvas.height / dpr;
@@ -43,13 +42,13 @@ export class Renderer {
     return { cellSize, offsetX, offsetY, cssWidth, cssHeight };
   }
 
-  draw(grid: Grid): void {
+  draw(grid: GridView): void {
     const { cellSize, offsetX, offsetY, cssWidth, cssHeight } = this.layout(grid);
 
     this.ctx.fillStyle = BACKGROUND_COLOR;
     this.ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-    for (const entity of grid.entities()) {
+    for (const entity of grid.entities) {
       const px = offsetX + entity.position.x * cellSize;
       const py = offsetY + entity.position.y * cellSize;
       const color = SUBSTANCE_COLORS[substanceOf(entity)];
@@ -71,13 +70,14 @@ export class Renderer {
   }
 
   /** Maps a client-space point (e.g. from a pointer event) to a grid cell, or null if outside the grid. */
-  cellFromClientPoint(clientX: number, clientY: number, grid: Grid): Position | null {
+  cellFromClientPoint(clientX: number, clientY: number, grid: GridView): Position | null {
     const rect = this.canvas.getBoundingClientRect();
     const cellSize = Math.max(1, Math.min(rect.width / grid.width, rect.height / grid.height));
     const offsetX = (rect.width - cellSize * grid.width) / 2;
     const offsetY = (rect.height - cellSize * grid.height) / 2;
     const x = Math.floor((clientX - rect.left - offsetX) / cellSize);
     const y = Math.floor((clientY - rect.top - offsetY) / cellSize);
-    return grid.inBounds(x, y) ? { x, y } : null;
+    const inBounds = x >= 0 && y >= 0 && x < grid.width && y < grid.height;
+    return inBounds ? { x, y } : null;
   }
 }

@@ -51,6 +51,17 @@ export interface Organic {
 
 export type Entity = Mineral | Organic;
 
+/**
+ * A lightweight view over grid dimensions and occupants, independent of any
+ * specific `Grid` implementation — e.g. a serialized snapshot posted from a
+ * simulation worker, where `entities` is a plain array rather than a method.
+ */
+export interface GridView {
+  width: number;
+  height: number;
+  entities: Entity[];
+}
+
 export function substanceOf(entity: Entity): Substance {
   return entity.kind === 'mineral' ? entity.substance : entity.dna.body;
 }

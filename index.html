@@ -12,8 +12,14 @@
   <body>
     <div id="app">
       <header>
-        <h1>Petri</h1>
-        <div id="stats">Tick 0 · Population 0</div>
+        <div class="title-block">
+          <h1>Petri</h1>
+          <span id="build-info" class="build-info"></span>
+        </div>
+        <div class="metrics">
+          <div id="stats">Tick 0 · Population 0</div>
+          <div id="perf" class="perf">0 FPS · 0 TPS</div>
+        </div>
       </header>
       <main>
         <div id="canvas-wrap">
