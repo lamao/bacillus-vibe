@@ -322,7 +322,6 @@ const renderInspector = (): void => {
         { label: 'Consume', value: entity.dna.consume },
         { label: 'Produce', value: entity.dna.produce },
         { label: 'Toxin', value: entity.dna.toxin },
-        { label: 'Action', value: entity.chosenAction ? formatAction(entity.chosenAction) : '—' },
       );
     }
   }
