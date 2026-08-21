@@ -88,6 +88,7 @@ const inspectorCloseBtn = document.querySelector<HTMLButtonElement>('#inspector-
 const speedInput = document.querySelector<HTMLInputElement>('#speed');
 const speedLabel = document.querySelector<HTMLElement>('#speed-value');
 const statsEl = document.querySelector<HTMLElement>('#stats');
+const perfEl = document.querySelector<HTMLElement>('#perf');
 const canvasWrap = document.querySelector<HTMLElement>('#canvas-wrap');
 const hintEl = document.querySelector<HTMLElement>('#hint');
 const buildInfoEl = document.querySelector<HTMLElement>('#build-info');
@@ -103,6 +104,7 @@ if (
   !speedInput ||
   !speedLabel ||
   !statsEl ||
+  !perfEl ||
   !canvasWrap ||
   !hintEl ||
   !buildInfoEl
@@ -207,6 +209,41 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
     postToWorker({ type: 'spawnOrganicAt', position: cell });
   }
 });
+
+/**
+ * Tracks an event rate (frames or ticks per second) by counting events into a fixed
+ * wall-clock window and reporting the previous window's rate once the current one
+ * fills — smoother than an instantaneous per-frame estimate, still cheap to compute.
+ */
+function createRateMeter(windowMs: number) {
+  let windowStart: number | null = null;
+  let windowCount = 0;
+  let rate = 0;
+  return {
+    sample(now: number, count: number): number {
+      if (windowStart === null) windowStart = now;
+      windowCount += count;
+      const elapsed = now - windowStart;
+      if (elapsed >= windowMs) {
+        rate = (windowCount / elapsed) * 1000;
+        windowStart = now;
+        windowCount = 0;
+      }
+      return rate;
+    },
+  };
+}
+
+const RATE_WINDOW_MS = 500;
+const fpsMeter = createRateMeter(RATE_WINDOW_MS);
+const tpsMeter = createRateMeter(RATE_WINDOW_MS);
+let lastTickCount = 0;
+let fps = 0;
+let tps = 0;
+
+function formatPerf(): string {
+  return `${Math.round(fps)} FPS · ${Math.round(tps)} TPS`;
+}
 
 function formatStats(): string {
   const organics = (latestSnapshot?.entities ?? []).filter((entity): entity is Organic => entity.kind === 'organic');
@@ -364,9 +401,15 @@ const renderInspector = (): void => {
   inspectorEl.classList.remove('hidden');
 };
 
-const frame = (): void => {
-  if (latestSnapshot) renderer.draw(latestSnapshot);
+const frame = (time: number): void => {
+  fps = fpsMeter.sample(time, 1);
+  if (latestSnapshot) {
+    tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
+    lastTickCount = latestSnapshot.tickCount;
+    renderer.draw(latestSnapshot);
+  }
   statsEl.textContent = formatStats();
+  perfEl.textContent = formatPerf();
   renderInspector();
   requestAnimationFrame(frame);
 };
