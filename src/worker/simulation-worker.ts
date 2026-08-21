@@ -1,7 +1,7 @@
 import { DefaultRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
-import { RENDER_FPS, WorkerRequest, SimulationSnapshot } from './protocol';
+import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot } from './protocol';
 
 const INITIAL_POPULATION = 150;
 
@@ -25,7 +25,7 @@ const MAX_CATCH_UP_SECONDS = 0.25;
 const MIN_ACCUMULATOR_CAP = 1;
 
 /** How often the worker posts a render snapshot to the main thread, independent of tick rate. */
-const SNAPSHOT_INTERVAL_MS = 1000 / RENDER_FPS;
+const SNAPSHOT_INTERVAL_MS = 1000 / WORKER_LOOP_FPS;
 
 /**
  * Caps how long one `loop()` invocation may spend ticking, regardless of how large a
