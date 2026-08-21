@@ -111,6 +111,35 @@ inclusive (a cell is "in range" when its distance is `<= range`).
   doesn't say explicitly, but "DefaultSize... starting size" reads most
   naturally as a full starting reserve.
 
+### Instruction-matrix findings (#12)
+
+Once the instruction matrix (#5) was driving behavior end-to-end, #12 tracked
+down its open questions against actual runs (`test/engine/determinism.test.ts`,
+`test/engine/stability.test.ts`):
+
+- **RNG determinism** — `decideAction`'s per-tick `Random`-sensor draw (and
+  every other random choice: movement, reproduction, mutation) flows through
+  the single `RNG` instance injected into `Simulation`, consumed in a fixed
+  order (`grid.organics()`'s cell-index iteration). Two `Simulation`s seeded
+  identically produce byte-for-byte identical grids after thousands of ticks;
+  confirmed as a permanent regression test rather than a one-off check.
+- **`produceWaste`'s Hold-gating safety valve** — an organic that never
+  chooses `Produce (Release)` hoards `accumulatedWaste` indefinitely with no
+  cap. Across extended runs (thousands of ticks, evolving populations) this
+  doesn't produce degenerate always-poisoned lineages: hoarding only turns
+  into self-damage on a `Release` attempt that can't fully place its waste,
+  and the population as a whole stays healthy. No cap/force-release rule was
+  added — same "accepted, not a bug" stance #5 already took for dead
+  branches, now backed by a regression test instead of just an assumption.
+- **Oscillating/unproductive loops** — a genome that never reaches a given
+  action category (or cycles through states without changing its effective
+  behavior) is possible and, per #5's resolved decisions, an accepted dead
+  branch rather than a bug to special-case.
+- **Balance** — with the default settings and `mutationRate`, population
+  size oscillates rather than collapsing or exploding to fill the grid,
+  across long runs with mutation-driven reproduction active. No default
+  settings changed.
+
 ## Security & supply chain
 
 Runtime dependencies are effectively zero: vanilla TypeScript + Canvas2D,
