@@ -21,7 +21,8 @@ export type WorkerRequest =
   | { type: 'setPaused'; paused: boolean }
   | { type: 'setTicksPerSecond'; ticksPerSecond: number }
   | { type: 'spawnRandomOrganic' }
-  | { type: 'spawnOrganicAt'; position: Position };
+  | { type: 'spawnOrganicAt'; position: Position }
+  | { type: 'stepOnce' };
 
 /**
  * A snapshot of the simulation's grid, posted from the worker once per

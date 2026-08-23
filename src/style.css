@@ -132,6 +132,10 @@ button:active {
   filter: brightness(0.9);
 }
 
+.hidden {
+  display: none;
+}
+
 button[aria-pressed='true'] {
   background: var(--text);
   color: var(--bg);

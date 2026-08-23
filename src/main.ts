@@ -80,6 +80,7 @@ function formatTickRate(ticksPerSecond: number): string {
 
 const canvas = document.querySelector<HTMLCanvasElement>('#grid-canvas');
 const pauseBtn = document.querySelector<HTMLButtonElement>('#pause-btn');
+const ticBtn = document.querySelector<HTMLButtonElement>('#tic-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
 const inspectorEl = document.querySelector<HTMLElement>('#inspector');
@@ -96,6 +97,7 @@ const buildInfoEl = document.querySelector<HTMLElement>('#build-info');
 if (
   !canvas ||
   !pauseBtn ||
+  !ticBtn ||
   !addBtn ||
   !inspectBtn ||
   !inspectorEl ||
@@ -154,7 +156,12 @@ resizeCanvas();
 pauseBtn.addEventListener('click', () => {
   paused = !paused;
   pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  ticBtn.classList.toggle('hidden', !paused);
   postToWorker({ type: 'setPaused', paused });
+});
+
+ticBtn.addEventListener('click', () => {
+  postToWorker({ type: 'stepOnce' });
 });
 
 addBtn.addEventListener('click', () => {
