@@ -28,6 +28,30 @@
             <button id="inspector-close" type="button" class="inspector-close" aria-label="Close inspector">&times;</button>
             <div id="inspector-content"></div>
           </div>
+          <div id="stats-drawer" class="stats-drawer">
+            <button id="stats-bar" type="button" class="stats-bar" aria-expanded="false" aria-controls="stats-drawer-body">
+              <span class="stats-total">
+                <span class="stats-label">Population</span>
+                <span id="stats-total-value">0</span>
+              </span>
+              <span id="stats-chip-row" class="stats-chip-row"></span>
+              <span id="stats-chevron" class="stats-chevron" aria-hidden="true"></span>
+            </button>
+            <div id="stats-drawer-body" class="stats-drawer-body hidden">
+              <div class="stats-drawer-head">
+                <div class="stats-pager">
+                  <button id="stats-prev" type="button" class="stats-pager-btn" aria-label="Previous chart"></button>
+                  <div class="stats-pager-mid">
+                    <div id="stats-page-title" class="stats-page-title"></div>
+                    <div id="stats-pager-dots" class="stats-pager-dots"></div>
+                  </div>
+                  <button id="stats-next" type="button" class="stats-pager-btn" aria-label="Next chart"></button>
+                </div>
+                <div id="stats-chips" class="stats-chips"></div>
+              </div>
+              <svg id="stats-chart" class="stats-chart"></svg>
+            </div>
+          </div>
         </div>
       </main>
       <footer id="controls">

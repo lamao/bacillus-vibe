@@ -11,6 +11,8 @@ import {
   substanceOf,
 } from './engine/types';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { StatsDrawer } from './ui/statsDrawer';
+import { computeStatCounts, StatCounts } from './ui/stats';
 import { computeTrend, Trend } from './ui/trend';
 import { RENDER_FPS, SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
 import './style.css';
@@ -135,6 +137,7 @@ worker.onmessage = (event: MessageEvent) => {
 };
 
 const renderer = new Renderer(canvas);
+const statsDrawer = new StatsDrawer();
 
 let paused = false;
 let ticksPerSecond = TICK_RATE_PRESETS[DEFAULT_TICK_RATE_INDEX];
@@ -253,21 +256,8 @@ function formatPerf(): string {
   return `${Math.round(fps)} FPS · ${Math.round(tps)} TPS`;
 }
 
-interface StatCounts {
-  total: number;
-  minerals: number;
-  bySubstance: Map<Substance, number>;
-}
-
 function currentStatCounts(): StatCounts {
-  const entities = latestSnapshot?.entities ?? [];
-  const organics = entities.filter((entity): entity is Organic => entity.kind === 'organic');
-  const minerals = entities.filter((entity) => entity.kind === 'mineral').length;
-  const bySubstance = new Map<Substance, number>();
-  for (const organic of organics) {
-    bySubstance.set(organic.dna.body, (bySubstance.get(organic.dna.body) ?? 0) + 1);
-  }
-  return { total: organics.length, minerals, bySubstance };
+  return computeStatCounts(latestSnapshot?.entities ?? []);
 }
 
 // Trends (growing/shrinking, per #37) are diffed against a snapshot of counts taken
@@ -320,8 +310,7 @@ function appendStatSegment(target: HTMLElement, text: string, trend: Trend | nul
   if (trendEl) target.appendChild(trendEl);
 }
 
-const renderStats = (): void => {
-  const counts = currentStatCounts();
+const renderStats = (counts: StatCounts): void => {
   statsEl.replaceChildren();
   appendStatSegment(statsEl, `Tick ${latestSnapshot?.tickCount ?? 0}`, null);
   appendStatSegment(statsEl, `Population ${counts.total}`, totalTrend);
@@ -490,12 +479,14 @@ const frame = (time: number): void => {
   lastRenderTime = time;
 
   fps = fpsMeter.sample(time, 1);
+  const counts = currentStatCounts();
   if (latestSnapshot) {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
     lastTickCount = latestSnapshot.tickCount;
     renderer.draw(latestSnapshot);
+    statsDrawer.update(counts, latestSnapshot.tickCount);
   }
-  renderStats();
+  renderStats(counts);
   perfEl.textContent = formatPerf();
   renderInspector();
   requestAnimationFrame(frame);
