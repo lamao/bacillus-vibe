@@ -21,6 +21,15 @@ export function computeTrend(previous: number, current: number): Trend | null {
   if (current === previous) return null;
   const percentChange = previous === 0 ? Infinity : Math.abs(current - previous) / previous;
   if (percentChange < IGNORE_CHANGE_THRESHOLD) return null;
-  const chevrons = percentChange < MEDIUM_CHANGE_THRESHOLD ? 1 : percentChange < FAST_CHANGE_THRESHOLD ? 2 : 3;
+
+  let chevrons: Trend['chevrons'];
+  if (percentChange < MEDIUM_CHANGE_THRESHOLD) {
+    chevrons = 1;
+  } else if (percentChange < FAST_CHANGE_THRESHOLD) {
+    chevrons = 2;
+  } else {
+    chevrons = 3;
+  }
+
   return { direction: current > previous ? 'up' : 'down', chevrons };
 }
