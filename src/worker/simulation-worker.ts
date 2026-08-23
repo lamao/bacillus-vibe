@@ -65,6 +65,12 @@ self.onmessage = (event: MessageEvent) => {
     case 'spawnOrganicAt':
       simulation.spawnOrganicAt(message.position);
       break;
+    case 'stepOnce':
+      // Runs even while paused: `paused` only gates the automatic loop() below, and a
+      // manual step should work regardless of the current tick-rate/accumulator state.
+      simulation.step();
+      postSnapshot();
+      break;
   }
 };
 
