@@ -11,6 +11,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { computeTrend, Trend } from './ui/trend';
 import { RENDER_FPS, SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
 import './style.css';
 
@@ -245,19 +246,78 @@ function formatPerf(): string {
   return `${Math.round(fps)} FPS · ${Math.round(tps)} TPS`;
 }
 
-function formatStats(): string {
-  const organics = (latestSnapshot?.entities ?? []).filter((entity): entity is Organic => entity.kind === 'organic');
-  const counts = new Map<Substance, number>();
-  for (const organic of organics) {
-    counts.set(organic.dna.body, (counts.get(organic.dna.body) ?? 0) + 1);
-  }
-  const breakdown = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([substance, count]) => `${substance} ${count}`)
-    .join(' · ');
-  const suffix = breakdown ? ` · ${breakdown}` : '';
-  return `Tick ${latestSnapshot?.tickCount ?? 0} · Population ${organics.length}${suffix}`;
+interface StatCounts {
+  total: number;
+  bySubstance: Map<Substance, number>;
 }
+
+function currentStatCounts(): StatCounts {
+  const organics = (latestSnapshot?.entities ?? []).filter((entity): entity is Organic => entity.kind === 'organic');
+  const bySubstance = new Map<Substance, number>();
+  for (const organic of organics) {
+    bySubstance.set(organic.dna.body, (bySubstance.get(organic.dna.body) ?? 0) + 1);
+  }
+  return { total: organics.length, bySubstance };
+}
+
+// Trends (growing/shrinking, per #37) are diffed against a snapshot of counts taken
+// once per second, wall-clock — independent of tick rate and of the RENDER_FPS-throttled
+// render loop below, so the sampling cadence doesn't jitter with frame rate or change
+// meaning as the user adjusts simulation speed.
+let previousStatCounts: StatCounts | null = null;
+let totalTrend: Trend | null = null;
+let substanceTrends = new Map<Substance, Trend | null>();
+
+function sampleTrends(): void {
+  const counts = currentStatCounts();
+  if (previousStatCounts) {
+    totalTrend = computeTrend(previousStatCounts.total, counts.total);
+    const substances = new Set([...counts.bySubstance.keys(), ...previousStatCounts.bySubstance.keys()]);
+    substanceTrends = new Map(
+      [...substances].map((substance) => [
+        substance,
+        computeTrend(previousStatCounts!.bySubstance.get(substance) ?? 0, counts.bySubstance.get(substance) ?? 0),
+      ]),
+    );
+  }
+  previousStatCounts = counts;
+}
+setInterval(sampleTrends, 1000);
+
+/** Builds a tight, overlapping vertical stack of chevrons for a trend, or null to show none. */
+function buildTrendEl(trend: Trend | null): HTMLElement | null {
+  if (!trend) return null;
+  const el = document.createElement('span');
+  el.className = `trend trend-${trend.direction}`;
+  el.title = `Trending ${trend.direction}`;
+  for (let i = 0; i < trend.chevrons; i++) {
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    el.appendChild(chevron);
+  }
+  return el;
+}
+
+function appendStatSegment(target: HTMLElement, text: string, trend: Trend | null): void {
+  if (target.childNodes.length > 0) {
+    target.appendChild(document.createTextNode(' · '));
+  }
+  target.appendChild(document.createTextNode(text));
+  const trendEl = buildTrendEl(trend);
+  if (trendEl) target.appendChild(trendEl);
+}
+
+const renderStats = (): void => {
+  const counts = currentStatCounts();
+  statsEl.replaceChildren();
+  appendStatSegment(statsEl, `Tick ${latestSnapshot?.tickCount ?? 0}`, null);
+  appendStatSegment(statsEl, `Population ${counts.total}`, totalTrend);
+  const breakdown = [...counts.bySubstance.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [substance, count] of breakdown) {
+    appendStatSegment(statsEl, `${substance} ${count}`, substanceTrends.get(substance) ?? null);
+  }
+};
 
 interface InspectorRow {
   label: string;
@@ -422,7 +482,7 @@ const frame = (time: number): void => {
     lastTickCount = latestSnapshot.tickCount;
     renderer.draw(latestSnapshot);
   }
-  statsEl.textContent = formatStats();
+  renderStats();
   perfEl.textContent = formatPerf();
   renderInspector();
   requestAnimationFrame(frame);
