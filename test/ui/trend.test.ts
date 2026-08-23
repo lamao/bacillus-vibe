@@ -7,20 +7,26 @@ describe('computeTrend', () => {
     expect(computeTrend(0, 0)).toBeNull();
   });
 
+  it('returns null (ignored) when |% change| is below 3%', () => {
+    expect(computeTrend(100, 101)).toBeNull(); // 1%
+    expect(computeTrend(100, 102.9)).toBeNull(); // 2.9%
+  });
+
   it('reports "up" when growing, "down" when shrinking', () => {
-    expect(computeTrend(10, 11)?.direction).toBe('up');
-    expect(computeTrend(10, 9)?.direction).toBe('down');
+    expect(computeTrend(100, 110)?.direction).toBe('up');
+    expect(computeTrend(100, 90)?.direction).toBe('down');
   });
 
   it('buckets |% change| into 1/2/3 chevrons', () => {
-    expect(computeTrend(100, 101)?.chevrons).toBe(1); // 1%
-    expect(computeTrend(100, 105)?.chevrons).toBe(2); // 5%
+    expect(computeTrend(100, 105)?.chevrons).toBe(1); // 5%
+    expect(computeTrend(100, 110)?.chevrons).toBe(2); // 10%
     expect(computeTrend(100, 120)?.chevrons).toBe(3); // 20%
   });
 
   it('treats the boundaries as inclusive of the faster bucket', () => {
-    expect(computeTrend(100, 103)?.chevrons).toBe(2); // exactly 3%
-    expect(computeTrend(100, 110)?.chevrons).toBe(3); // exactly 10%
+    expect(computeTrend(100, 103)?.chevrons).toBe(1); // exactly 3%
+    expect(computeTrend(100, 107)?.chevrons).toBe(2); // exactly 7%
+    expect(computeTrend(100, 115)?.chevrons).toBe(3); // exactly 15%
   });
 
   it('treats a change from 0 as the fastest bucket', () => {

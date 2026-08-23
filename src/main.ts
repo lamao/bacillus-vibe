@@ -248,16 +248,19 @@ function formatPerf(): string {
 
 interface StatCounts {
   total: number;
+  minerals: number;
   bySubstance: Map<Substance, number>;
 }
 
 function currentStatCounts(): StatCounts {
-  const organics = (latestSnapshot?.entities ?? []).filter((entity): entity is Organic => entity.kind === 'organic');
+  const entities = latestSnapshot?.entities ?? [];
+  const organics = entities.filter((entity): entity is Organic => entity.kind === 'organic');
+  const minerals = entities.filter((entity) => entity.kind === 'mineral').length;
   const bySubstance = new Map<Substance, number>();
   for (const organic of organics) {
     bySubstance.set(organic.dna.body, (bySubstance.get(organic.dna.body) ?? 0) + 1);
   }
-  return { total: organics.length, bySubstance };
+  return { total: organics.length, minerals, bySubstance };
 }
 
 // Trends (growing/shrinking, per #37) are diffed against a snapshot of counts taken
@@ -266,12 +269,14 @@ function currentStatCounts(): StatCounts {
 // meaning as the user adjusts simulation speed.
 let previousStatCounts: StatCounts | null = null;
 let totalTrend: Trend | null = null;
+let mineralsTrend: Trend | null = null;
 let substanceTrends = new Map<Substance, Trend | null>();
 
 function sampleTrends(): void {
   const counts = currentStatCounts();
   if (previousStatCounts) {
     totalTrend = computeTrend(previousStatCounts.total, counts.total);
+    mineralsTrend = computeTrend(previousStatCounts.minerals, counts.minerals);
     const substances = new Set([...counts.bySubstance.keys(), ...previousStatCounts.bySubstance.keys()]);
     substanceTrends = new Map(
       [...substances].map((substance) => [
@@ -313,6 +318,7 @@ const renderStats = (): void => {
   statsEl.replaceChildren();
   appendStatSegment(statsEl, `Tick ${latestSnapshot?.tickCount ?? 0}`, null);
   appendStatSegment(statsEl, `Population ${counts.total}`, totalTrend);
+  appendStatSegment(statsEl, `Minerals ${counts.minerals}`, mineralsTrend);
   const breakdown = [...counts.bySubstance.entries()].sort((a, b) => b[1] - a[1]);
   for (const [substance, count] of breakdown) {
     appendStatSegment(statsEl, `${substance} ${count}`, substanceTrends.get(substance) ?? null);
