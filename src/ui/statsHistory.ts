@@ -12,6 +12,8 @@ export const ZERO_BIRTHS_DEATHS_RATE: BirthsDeathsRate = { births: 0, deaths: 0 
 export interface StatsSample {
   tick: number;
   total: number;
+  /** Mineral entity count (Composition tab, #41) — the organic-side count is `total`, the same series as the Population tab's total. */
+  minerals: number;
   bySubstance: ReadonlyMap<Substance, number>;
   averages: AverageRatios;
   birthsDeaths: BirthsDeathsRate;
@@ -35,13 +37,14 @@ export class StatsHistory {
   record(
     tick: number,
     total: number,
+    minerals: number,
     bySubstance: ReadonlyMap<Substance, number>,
     averages: AverageRatios,
     birthsDeaths: BirthsDeathsRate,
   ): void {
     const last = this.samples[this.samples.length - 1];
     if (last && last.tick === tick) return;
-    this.samples.push({ tick, total, bySubstance, averages, birthsDeaths });
+    this.samples.push({ tick, total, minerals, bySubstance, averages, birthsDeaths });
     while (this.samples.length > 1 && tick - this.samples[0].tick > MAX_TIME_WINDOW) {
       this.samples.shift();
     }
