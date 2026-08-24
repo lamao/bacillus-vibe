@@ -178,21 +178,26 @@ button[aria-pressed='true'] {
   top: 0.6rem;
   right: 0.6rem;
   width: min(300px, calc(100% - 1.2rem));
-  /* Reserves room for the tallest content set (a full organic: 12 dl rows plus the
-     5x5 instruction matrix and its detail box) so the box doesn't visibly grow/shrink
-     as the inspected cell's content, current state, or tapped cell changes tick to
-     tick (e.g. an organic wanders off, leaving an empty cell or a corpse). Capped by
-     max-height, with overflow clipped rather than scrollable, so the panel can never
-     grow past canvas-wrap and cover the footer's controls on a short (e.g. mobile)
-     viewport — the close button stays reachable regardless of screen size. Also stays
+  /* Grows up to a comfortable default (a full organic: 12 dl rows plus the 5x5
+     instruction matrix and its detail box fits without scrolling on most screens) but
+     never past what's actually available — capped by max-height, which also stays
      clear of the docked stats drawer at the bottom (--stats-drawer-height, kept live by
-     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded). min-height
+     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded). Floored at
+     9rem via max() so a short viewport + expanded drawer can't squeeze the available
+     space below this panel's own padding (2.6rem + 0.6rem) — without a floor,
+     #inspector-content would be clamped to a literal 0px, which no amount of
+     overflow-y: auto can make usable. That floor can reintroduce a small, deliberate
+     overlap with the drawer in that specific worst case; showing at least a few rows
+     (with the rest a scroll away) beats showing nothing to stay clear of it. min-height
      is capped by the same expression via min() so it can never exceed max-height — a
      browser resolves that conflict by letting min-height win outright, which would
-     force the panel back out to 40rem (and behind the drawer) the moment the drawer
-     expands enough to push max-height below it. */
-  min-height: min(40rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem));
-  max-height: calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem);
+     force the panel back out to 40rem regardless. When content still doesn't fit in
+     whatever height that leaves, #inspector-content scrolls internally rather than
+     clipping/losing info. */
+  min-height: min(40rem, max(9rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem)));
+  max-height: max(9rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: rgba(16, 24, 43, 0.92);
   border: 1px solid var(--border);
@@ -202,6 +207,20 @@ button[aria-pressed='true'] {
   line-height: 1.5;
   backdrop-filter: blur(4px);
   pointer-events: none;
+}
+
+#inspector-content {
+  /* min-height: 0 lets this flex item shrink below its content's intrinsic height —
+     without it, a flex item defaults to never shrinking past that, and overflow-y:
+     auto would never actually trigger no matter how little room .inspector has. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Scrolling needs real pointer/touch capture, so this region opts back into it
+     despite .inspector's pointer-events: none (which otherwise lets taps pass through
+     to the grid canvas underneath, e.g. to inspect a different cell). */
+  pointer-events: auto;
 }
 
 .inspector.hidden {
@@ -508,7 +527,11 @@ button[aria-pressed='true'] {
 
 .stats-chart {
   width: 100%;
-  height: 190px;
+  /* 21vh keeps this ~190px unchanged on a normal-height screen (~900px) but shrinks it
+     on a short one, so the expanded drawer can't eat so much of canvas-wrap that other
+     overlays (the inspector) are left with no room — see .inspector's floor/overlap
+     comment above for the failure this avoids triggering in the first place. */
+  height: min(190px, 21vh);
   display: block;
 }
 
@@ -530,6 +553,8 @@ button[aria-pressed='true'] {
     padding: 0.7rem 0.9rem 0.9rem;
   }
   .stats-chart {
-    height: 220px;
+    /* 26vh keeps this ~220px unchanged on a normal-height phone (~844px) but shrinks it
+       on a short one (e.g. iPhone SE's 667px), for the same reason as the base rule. */
+    height: min(220px, 26vh);
   }
 }
