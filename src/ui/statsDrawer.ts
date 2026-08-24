@@ -1,8 +1,9 @@
 import { PHYSICAL_SUBSTANCES } from '../engine/types';
+import { AverageRatios } from './averages';
 import { scaleLinePoints } from './chart';
 import { SUBSTANCE_COLORS } from './renderer';
 import { StatCounts } from './stats';
-import { StatsHistory, TIME_WINDOWS, TimeWindow } from './statsHistory';
+import { StatsHistory, StatsSample, TIME_WINDOWS, TimeWindow } from './statsHistory';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -26,13 +27,26 @@ const CHART_HEIGHT = 190;
 const CHART_MARGIN = 12;
 const GRIDLINE_COUNT = 4;
 const TOTAL_LINE_COLOR = '#e6e9f2';
+const AXIS_LABEL_COLOR = '#5b6376';
 
 /**
- * Titles of the drawer's paged-carousel tabs, in display order. Only "Population" (#38)
- * is implemented so far; later issues (Averages, Births & deaths, Composition) extend
+ * Titles of the drawer's paged-carousel tabs, in display order. Population (#38) and
+ * Averages (#39) are implemented; later issues (Births & deaths, Composition) extend
  * this array and add a matching branch in `renderChart` — no shell changes needed.
  */
-const PAGE_TITLES = ['Population'] as const;
+const PAGE_TITLES = ['Population', 'Averages'] as const;
+
+/**
+ * The Averages tab's three lines: the same 0-1 ratios the engine's own instruction-
+ * matrix sensors read per organic (EnergyRatio, Age, SizeRatio — see
+ * engine/phases.ts's evaluateSensor), averaged across the population, all sharing one
+ * fixed 0-100% axis since they're already comparable ratios despite different units.
+ */
+const AVERAGE_LINES: { label: string; color: string; value: (averages: AverageRatios) => number }[] = [
+  { label: 'Avg energy (% of size)', color: '#4f8cff', value: (averages) => averages.avgEnergy },
+  { label: 'Avg age (% of max age)', color: '#f472b6', value: (averages) => averages.avgAge },
+  { label: 'Avg size (% of max size)', color: '#a78bfa', value: (averages) => averages.avgSize },
+];
 
 /**
  * The docked-bottom stats widget (#38): a collapsed bar (total + per-substance chips)
@@ -59,6 +73,7 @@ export class StatsDrawer {
   private readonly dotsEl = requireEl<HTMLElement>('#stats-pager-dots');
   private readonly chipsEl = requireEl<HTMLElement>('#stats-chips');
   private readonly chartEl = requireEl<SVGSVGElement>('#stats-chart');
+  private readonly legendEl = requireEl<HTMLElement>('#stats-legend');
 
   constructor() {
     this.chevron.innerHTML = svgIcon(CHEVRON_UP, 16);
@@ -90,9 +105,9 @@ export class StatsDrawer {
     document.documentElement.style.setProperty('--stats-drawer-height', `${this.root.getBoundingClientRect().height}px`);
   }
 
-  /** Called once per animation frame with the latest population counts and tick. */
-  update(counts: StatCounts, tick: number): void {
-    this.history.record(tick, counts.total, counts.bySubstance);
+  /** Called once per animation frame with the latest population counts, averages, and tick. */
+  update(counts: StatCounts, averages: AverageRatios, tick: number): void {
+    this.history.record(tick, counts.total, counts.bySubstance, averages);
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
   }
@@ -168,22 +183,35 @@ export class StatsDrawer {
     }
   }
 
-  /** Renders the active page's chart, skipped when nothing that would change its output has changed. */
+  /** Renders the active page's chart (+ legend, for pages that need one), skipped when nothing that would change its output has changed. */
   private renderChart(counts: StatCounts): void {
     const samples = this.history.window(this.selectedWindow);
-    const presentSubstances = PHYSICAL_SUBSTANCES.filter((substance) => (counts.bySubstance.get(substance) ?? 0) > 0);
     const latestTick = samples[samples.length - 1]?.tick ?? -1;
-    const signature = `${this.pageIndex}|${this.selectedWindow}|${samples.length}|${latestTick}|${presentSubstances.join(',')}`;
+    // Only the Population page's line set can change (which substances are present);
+    // Averages always draws the same fixed three lines, so its signature needs nothing extra.
+    const pageKey =
+      this.pageIndex === 0 ? PHYSICAL_SUBSTANCES.filter((substance) => (counts.bySubstance.get(substance) ?? 0) > 0).join(',') : '';
+    const signature = `${this.pageIndex}|${this.selectedWindow}|${samples.length}|${latestTick}|${pageKey}`;
     if (signature === this.lastChartSignature) return;
     this.lastChartSignature = signature;
 
     this.chartEl.replaceChildren();
+    this.legendEl.replaceChildren();
 
     for (let i = 0; i < GRIDLINE_COUNT; i++) {
       const y = CHART_MARGIN + (i / (GRIDLINE_COUNT - 1)) * (CHART_HEIGHT - 2 * CHART_MARGIN);
       this.chartEl.appendChild(this.gridline(y));
     }
 
+    if (this.pageIndex === 0) {
+      this.renderPopulationChart(samples, counts);
+    } else {
+      this.renderAveragesChart(samples);
+    }
+  }
+
+  private renderPopulationChart(samples: StatsSample[], counts: StatCounts): void {
+    const presentSubstances = PHYSICAL_SUBSTANCES.filter((substance) => (counts.bySubstance.get(substance) ?? 0) > 0);
     const maxTotal = samples.reduce((max, sample) => Math.max(max, sample.total), 0);
 
     this.chartEl.appendChild(
@@ -205,6 +233,38 @@ export class StatsDrawer {
         this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxTotal), SUBSTANCE_COLORS[substance], 1.75),
       );
     }
+  }
+
+  private renderAveragesChart(samples: StatsSample[]): void {
+    this.chartEl.appendChild(this.axisLabel(CHART_MARGIN + 4, '100%'));
+    this.chartEl.appendChild(this.axisLabel(CHART_HEIGHT - CHART_MARGIN + 4, '0%'));
+    for (const line of AVERAGE_LINES) {
+      const values = samples.map((s) => line.value(s.averages));
+      // maxValue is fixed at 1 (not autoscaled like Population's Total-derived max) since
+      // these are already 0-1 ratios sharing one intentionally fixed 0-100% axis.
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, 1), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  private axisLabel(y: number, text: string): SVGTextElement {
+    const el = document.createElementNS(SVG_NS, 'text');
+    el.setAttribute('x', '4');
+    el.setAttribute('y', y.toFixed(1));
+    el.setAttribute('fill', AXIS_LABEL_COLOR);
+    el.setAttribute('font-size', '11');
+    el.textContent = text;
+    return el;
+  }
+
+  private legendItem(color: string, label: string): HTMLElement {
+    const item = document.createElement('span');
+    item.className = 'stats-chip-item';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.backgroundColor = color;
+    item.append(swatch, document.createTextNode(label));
+    return item;
   }
 
   private gridline(y: number): SVGLineElement {

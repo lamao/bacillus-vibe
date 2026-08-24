@@ -34,4 +34,16 @@ export interface SimulationSnapshot extends GridView {
   tickCount: number;
 }
 
-export type WorkerResponse = SimulationSnapshot;
+/**
+ * The two Settings fields the Averages tab needs to turn an organic's raw age/size into
+ * the same 0-1 ratios its own instruction-matrix sensors read (see engine/phases.ts's
+ * evaluateSensor). Settings never changes after the worker starts, so this is posted
+ * once up front rather than repeated on every SimulationSnapshot.
+ */
+export interface WorkerSettings {
+  type: 'settings';
+  maxAge: number;
+  maxSize: number;
+}
+
+export type WorkerResponse = SimulationSnapshot | WorkerSettings;

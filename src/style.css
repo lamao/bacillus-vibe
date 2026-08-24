@@ -535,6 +535,20 @@ button[aria-pressed='true'] {
   display: block;
 }
 
+/* Only populated on pages whose lines aren't already identified by the collapsed bar's
+   substance chips (e.g. Averages' three fixed-color ratio lines) — empty otherwise. */
+.stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.stats-legend:empty {
+  display: none;
+}
+
 @media (max-width: 480px) {
   header h1 {
     font-size: 1rem;
