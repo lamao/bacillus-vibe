@@ -178,15 +178,26 @@ button[aria-pressed='true'] {
   top: 0.6rem;
   right: 0.6rem;
   width: min(300px, calc(100% - 1.2rem));
-  /* Reserves room for the tallest content set (a full organic: 12 dl rows plus the
-     5x5 instruction matrix and its detail box) so the box doesn't visibly grow/shrink
-     as the inspected cell's content, current state, or tapped cell changes tick to
-     tick (e.g. an organic wanders off, leaving an empty cell or a corpse). Capped by
-     max-height, with overflow clipped rather than scrollable, so the panel can never
-     grow past canvas-wrap and cover the footer's controls on a short (e.g. mobile)
-     viewport — the close button stays reachable regardless of screen size. */
-  min-height: 40rem;
-  max-height: calc(100% - 1.2rem);
+  /* Grows up to a comfortable default (a full organic: 12 dl rows plus the 5x5
+     instruction matrix and its detail box fits without scrolling on most screens) but
+     never past what's actually available — capped by max-height, which also stays
+     clear of the docked stats drawer at the bottom (--stats-drawer-height, kept live by
+     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded). Floored at
+     9rem via max() so a short viewport + expanded drawer can't squeeze the available
+     space below this panel's own padding (2.6rem + 0.6rem) — without a floor,
+     #inspector-content would be clamped to a literal 0px, which no amount of
+     overflow-y: auto can make usable. That floor can reintroduce a small, deliberate
+     overlap with the drawer in that specific worst case; showing at least a few rows
+     (with the rest a scroll away) beats showing nothing to stay clear of it. min-height
+     is capped by the same expression via min() so it can never exceed max-height — a
+     browser resolves that conflict by letting min-height win outright, which would
+     force the panel back out to 40rem regardless. When content still doesn't fit in
+     whatever height that leaves, #inspector-content scrolls internally rather than
+     clipping/losing info. */
+  min-height: min(40rem, max(9rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem)));
+  max-height: max(9rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: rgba(16, 24, 43, 0.92);
   border: 1px solid var(--border);
@@ -196,6 +207,20 @@ button[aria-pressed='true'] {
   line-height: 1.5;
   backdrop-filter: blur(4px);
   pointer-events: none;
+}
+
+#inspector-content {
+  /* min-height: 0 lets this flex item shrink below its content's intrinsic height —
+     without it, a flex item defaults to never shrinking past that, and overflow-y:
+     auto would never actually trigger no matter how little room .inspector has. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Scrolling needs real pointer/touch capture, so this region opts back into it
+     despite .inspector's pointer-events: none (which otherwise lets taps pass through
+     to the grid canvas underneath, e.g. to inspect a different cell). */
+  pointer-events: auto;
 }
 
 .inspector.hidden {
@@ -241,7 +266,7 @@ button[aria-pressed='true'] {
   text-align: right;
 }
 
-.inspector .swatch {
+.swatch {
   display: inline-block;
   width: 0.7em;
   height: 0.7em;
@@ -323,11 +348,213 @@ button[aria-pressed='true'] {
   margin-left: auto;
 }
 
+/* Docked-bottom stats widget (#38): a collapsed bar that becomes the header of a
+   paged-carousel drawer when expanded. One pattern for both desktop and mobile. */
+.stats-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(16, 24, 43, 0.94);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(4px);
+}
+
+.stats-drawer.expanded {
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.4);
+}
+
+.stats-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+  height: 56px;
+  padding: 0 1.2rem;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.stats-drawer.expanded .stats-bar {
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-total {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.stats-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-chip-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.stats-chevron {
+  margin-left: auto;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(230, 233, 242, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
+
+.stats-drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0.8rem 1.4rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.stats-drawer-body.hidden {
+  display: none;
+}
+
+.stats-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.stats-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stats-pager-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(230, 233, 242, 0.08);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.stats-pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.stats-pager-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 140px;
+}
+
+.stats-page-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stats-pager-dots {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.stats-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.stats-dot.active {
+  background: var(--accent);
+}
+
+.stats-chips {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.stats-chip {
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-weight: 500;
+}
+
+.stats-chip.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.14);
+}
+
+.stats-chart {
+  width: 100%;
+  /* 21vh keeps this ~190px unchanged on a normal-height screen (~900px) but shrinks it
+     on a short one, so the expanded drawer can't eat so much of canvas-wrap that other
+     overlays (the inspector) are left with no room — see .inspector's floor/overlap
+     comment above for the failure this avoids triggering in the first place. */
+  height: min(190px, 21vh);
+  display: block;
+}
+
 @media (max-width: 480px) {
   header h1 {
     font-size: 1rem;
   }
   .hint {
     display: none;
+  }
+  .stats-bar {
+    gap: 0.7rem;
+    padding: 0 0.9rem;
+  }
+  .stats-chip-row {
+    display: none;
+  }
+  .stats-drawer-body {
+    padding: 0.7rem 0.9rem 0.9rem;
+  }
+  .stats-chart {
+    /* 26vh keeps this ~220px unchanged on a normal-height phone (~844px) but shrinks it
+       on a short one (e.g. iPhone SE's 667px), for the same reason as the base rule. */
+    height: min(220px, 26vh);
   }
 }
