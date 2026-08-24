@@ -78,6 +78,8 @@ function postSnapshot(): void {
   const snapshot: SimulationSnapshot = {
     type: 'state',
     tickCount: simulation.tickCount,
+    totalBirths: simulation.totalBirths,
+    totalDeaths: simulation.totalDeaths,
     width: settings.width,
     height: settings.height,
     entities: simulation.grid.entities(),

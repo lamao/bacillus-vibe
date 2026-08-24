@@ -3,7 +3,7 @@ import { AverageRatios } from './averages';
 import { scaleLinePoints } from './chart';
 import { SUBSTANCE_COLORS } from './renderer';
 import { StatCounts } from './stats';
-import { StatsHistory, StatsSample, TIME_WINDOWS, TimeWindow } from './statsHistory';
+import { BirthsDeathsRate, StatsHistory, StatsSample, TIME_WINDOWS, TimeWindow } from './statsHistory';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -30,11 +30,11 @@ const TOTAL_LINE_COLOR = '#e6e9f2';
 const AXIS_LABEL_COLOR = '#5b6376';
 
 /**
- * Titles of the drawer's paged-carousel tabs, in display order. Population (#38) and
- * Averages (#39) are implemented; later issues (Births & deaths, Composition) extend
- * this array and add a matching branch in `renderChart` — no shell changes needed.
+ * Titles of the drawer's paged-carousel tabs, in display order. Population (#38),
+ * Averages (#39), and Births & deaths (#40) are implemented; Composition (later issue)
+ * extends this array and adds a matching branch in `renderChart` — no shell changes needed.
  */
-const PAGE_TITLES = ['Population', 'Averages'] as const;
+const PAGE_TITLES = ['Population', 'Averages', 'Births & deaths'] as const;
 
 /**
  * The Averages tab's three lines: the same 0-1 ratios the engine's own instruction-
@@ -46,6 +46,17 @@ const AVERAGE_LINES: { label: string; color: string; value: (averages: AverageRa
   { label: 'Avg energy (% of size)', color: '#4f8cff', value: (averages) => averages.avgEnergy },
   { label: 'Avg age (% of max age)', color: '#f472b6', value: (averages) => averages.avgAge },
   { label: 'Avg size (% of max size)', color: '#a78bfa', value: (averages) => averages.avgSize },
+];
+
+/**
+ * The Births & deaths tab's two lines, colored to match the header trend chevrons'
+ * up/down palette (green/red). Unlike Averages, these are raw per-second rates with no
+ * natural upper bound, so the chart autoscales like Population's rather than using a
+ * fixed axis.
+ */
+const BIRTHS_DEATHS_LINES: { label: string; color: string; value: (rate: BirthsDeathsRate) => number }[] = [
+  { label: 'Births / sec', color: '#22c55e', value: (rate) => rate.births },
+  { label: 'Deaths / sec', color: '#ef4444', value: (rate) => rate.deaths },
 ];
 
 /**
@@ -105,9 +116,9 @@ export class StatsDrawer {
     document.documentElement.style.setProperty('--stats-drawer-height', `${this.root.getBoundingClientRect().height}px`);
   }
 
-  /** Called once per animation frame with the latest population counts, averages, and tick. */
-  update(counts: StatCounts, averages: AverageRatios, tick: number): void {
-    this.history.record(tick, counts.total, counts.bySubstance, averages);
+  /** Called once per animation frame with the latest population counts, averages, births/deaths rate, and tick. */
+  update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, tick: number): void {
+    this.history.record(tick, counts.total, counts.bySubstance, averages, birthsDeaths);
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
   }
@@ -203,10 +214,16 @@ export class StatsDrawer {
       this.chartEl.appendChild(this.gridline(y));
     }
 
-    if (this.pageIndex === 0) {
-      this.renderPopulationChart(samples, counts);
-    } else {
-      this.renderAveragesChart(samples);
+    switch (this.pageIndex) {
+      case 0:
+        this.renderPopulationChart(samples, counts);
+        break;
+      case 1:
+        this.renderAveragesChart(samples);
+        break;
+      case 2:
+        this.renderBirthsDeathsChart(samples);
+        break;
     }
   }
 
@@ -243,6 +260,15 @@ export class StatsDrawer {
       // maxValue is fixed at 1 (not autoscaled like Population's Total-derived max) since
       // these are already 0-1 ratios sharing one intentionally fixed 0-100% axis.
       this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, 1), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  private renderBirthsDeathsChart(samples: StatsSample[]): void {
+    const maxRate = samples.reduce((max, sample) => Math.max(max, sample.birthsDeaths.births, sample.birthsDeaths.deaths), 0);
+    for (const line of BIRTHS_DEATHS_LINES) {
+      const values = samples.map((s) => line.value(s.birthsDeaths));
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxRate), line.color, 2));
       this.legendEl.appendChild(this.legendItem(line.color, line.label));
     }
   }

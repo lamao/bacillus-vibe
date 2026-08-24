@@ -14,16 +14,22 @@ import { DefaultRNG, RNG } from './rng';
 import { Settings, defaultSettings } from './settings';
 import { DNA, Organic, Position } from './types';
 
+export interface TickResult {
+  births: number;
+  deaths: number;
+}
+
 /** Runs one full tick: all eight phases, in order, over the whole population. */
-export function tick(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): void {
+export function tick(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): TickResult {
   decideAction(grid, settings, rng);
   moveOrganics(grid, settings);
-  reproduce(grid, settings, rng, nextId);
+  const births = reproduce(grid, settings, rng, nextId);
   consume(grid, settings);
   produceWaste(grid, settings);
   applyToxin(grid, settings);
   exhaust(grid, settings);
-  cleanup(grid, settings);
+  const deaths = cleanup(grid, settings);
+  return { births, deaths };
 }
 
 export class Simulation {
@@ -32,6 +38,9 @@ export class Simulation {
   private readonly rng: RNG;
   private idCounter = 0;
   tickCount = 0;
+  /** Cumulative counts since the simulation started, for #40's Births & deaths tab (diffed client-side into a per-second rate, the same way as the header trend chevrons). */
+  totalBirths = 0;
+  totalDeaths = 0;
 
   constructor(settings: Settings = defaultSettings(), rng: RNG = new DefaultRNG()) {
     this.settings = settings;
@@ -73,7 +82,9 @@ export class Simulation {
   }
 
   step(): void {
-    tick(this.grid, this.settings, this.rng, this.nextId);
+    const { births, deaths } = tick(this.grid, this.settings, this.rng, this.nextId);
+    this.totalBirths += births;
+    this.totalDeaths += deaths;
     this.tickCount += 1;
   }
 }

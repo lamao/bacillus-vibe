@@ -16,10 +16,11 @@ describe('reproduce (phase 3)', () => {
     const grid = emptyGrid(settings);
     const o = organic({ x: 5, y: 5 }, { energy: 1999, size: 1000, chosenAction: split });
     place(grid, o);
-    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.5]), idGen());
+    const births = reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.5]), idGen());
     expect(o.energy).toBe(1999);
     expect(o.size).toBe(1000);
     expect(grid.entities()).toHaveLength(1);
+    expect(births).toBe(0);
   });
 
   it("ignores organics whose chosen action isn't Split, even above the reproduction threshold", () => {
@@ -46,8 +47,9 @@ describe('reproduce (phase 3)', () => {
     // next() sequence: 0.5 -> spent factor (1 + (0.5*0.5-0.25)) = 1 -> spent=750
     //                  0.5 -> offset index floor(0.5*8)=4 -> (1,0)
     //                  0.9 -> mutation roll, 0.9 >= 0.01 -> no mutation
-    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.9]), idGen());
+    const births = reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.9]), idGen());
 
+    expect(births).toBe(1);
     expect(parent.energy).toBe(1250);
     expect(parent.size).toBe(250);
 
@@ -76,9 +78,10 @@ describe('reproduce (phase 3)', () => {
     const parent = organic({ x: 5, y: 5 }, { energy: 2000, size: 1000, chosenAction: split });
     const blocker = organic({ x: 6, y: 5 }, { energy: 100, size: 100 });
     place(grid, parent, blocker);
-    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.9]), idGen());
+    const births = reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.9]), idGen());
 
     // spent = 750; failed placement -> refund 750*0.5 = 375
+    expect(births).toBe(0);
     expect(parent.energy).toBe(2000 - 750 + 375);
     expect(parent.size).toBe(1000); // unchanged on failure
     expect(grid.get(6, 5)).toBe(blocker); // untouched
@@ -90,8 +93,9 @@ describe('reproduce (phase 3)', () => {
     const parent = organic({ x: 0, y: 0 }, { energy: 2000, size: 1000, chosenAction: split });
     place(grid, parent);
     // offset index 0 -> (-1,-1) from (0,0) is off-grid
-    reproduce(grid, settings, new MockRNG([0.5, 0, 0.9]), idGen());
+    const births = reproduce(grid, settings, new MockRNG([0.5, 0, 0.9]), idGen());
 
+    expect(births).toBe(0);
     expect(parent.energy).toBe(2000 - 750 + 375);
     expect(parent.size).toBe(1000);
   });
@@ -120,8 +124,9 @@ describe('reproduce (phase 3)', () => {
     place(grid, a, b);
     const rng = new MockRNG([0.5, 0.5, 0.9]);
     const ids = idGen();
-    reproduce(grid, settings, rng, ids);
+    const births = reproduce(grid, settings, rng, ids);
 
+    expect(births).toBe(2);
     expect(grid.get(2, 1)?.kind).toBe('organic');
     expect(grid.get(9, 8)?.kind).toBe('organic');
     const offA = grid.get(2, 1);

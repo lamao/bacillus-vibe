@@ -293,6 +293,26 @@ function sampleTrends(): void {
 }
 setInterval(sampleTrends, 1000);
 
+// Births/deaths rates (#40) sample the same once-per-second wall-clock cadence as the
+// trend chevrons above, independent of tick rate: a raw per-tick count would be
+// meaningless at high speed (many ticks batch between worker snapshots, so a birth and
+// a death in the same batch would cancel out invisibly) or tiny/noisy at low speed,
+// whereas a real-time rate stays comparable regardless of the current speed setting.
+let previousBirthsDeaths: { totalBirths: number; totalDeaths: number } | null = null;
+let birthsPerSec = 0;
+let deathsPerSec = 0;
+
+function sampleBirthsDeaths(): void {
+  if (!latestSnapshot) return;
+  const current = { totalBirths: latestSnapshot.totalBirths, totalDeaths: latestSnapshot.totalDeaths };
+  if (previousBirthsDeaths) {
+    birthsPerSec = current.totalBirths - previousBirthsDeaths.totalBirths;
+    deathsPerSec = current.totalDeaths - previousBirthsDeaths.totalDeaths;
+  }
+  previousBirthsDeaths = current;
+}
+setInterval(sampleBirthsDeaths, 1000);
+
 /** Builds a tight, overlapping vertical stack of chevrons for a trend, or null to show none. */
 function buildTrendEl(trend: Trend | null): HTMLElement | null {
   if (!trend) return null;
@@ -494,7 +514,7 @@ const frame = (time: number): void => {
     const averages = engineSettings
       ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
       : ZERO_AVERAGE_RATIOS;
-    statsDrawer.update(counts, averages, latestSnapshot.tickCount);
+    statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, latestSnapshot.tickCount);
   }
   renderStats(counts);
   perfEl.textContent = formatPerf();
