@@ -14,13 +14,16 @@ function git(command: string, fallback: string): string {
 // obvious rather than silently mistaken for the latest build. CI checks out
 // full branch refs (not detached-HEAD SHAs), so HEAD's branch name resolves
 // correctly there too; GITHUB_HEAD_REF/GITHUB_REF_NAME cover the PR/push
-// Actions cases where it wouldn't. commitCount + shortSha are the unique,
-// fully-automatic "counter": every commit changes at least the SHA.
+// Actions cases where it wouldn't. commitCount is a monotonically increasing
+// integer (count of commits reachable from HEAD) — led with here, since two
+// hashes are hard to eyeball as "newer/older" but two integers aren't;
+// branch + shortSha still follow for exact identification (also every
+// commit changes at least the SHA, so the whole id is unique regardless).
 const buildBranch =
   process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || git('git rev-parse --abbrev-ref HEAD', 'unknown');
 const buildCommitCount = git('git rev-list --count HEAD', '0');
 const buildShortSha = git('git rev-parse --short HEAD', 'unknown');
-const buildId = `${buildBranch}-${buildCommitCount}-${buildShortSha}`;
+const buildId = `#${buildCommitCount} · ${buildBranch}@${buildShortSha}`;
 
 // Deployed to https://<owner>.github.io/<repo>/ — base must match the repo
 // name so built asset URLs resolve under the Pages subpath. PR previews are
