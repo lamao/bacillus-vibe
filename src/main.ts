@@ -10,6 +10,7 @@ import {
   Substance,
   substanceOf,
 } from './engine/types';
+import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
@@ -129,9 +130,15 @@ const postToWorker = (message: WorkerRequest): void => worker.postMessage(messag
 
 let latestSnapshot: SimulationSnapshot | null = null;
 let entityByPosition = new Map<string, Entity>();
+/** Settings never changes after the worker starts, so this is captured once from its one-off 'settings' message rather than resent with every snapshot. */
+let engineSettings: { maxAge: number; maxSize: number } | null = null;
 
 worker.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerResponse;
+  if (message.type === 'settings') {
+    engineSettings = { maxAge: message.maxAge, maxSize: message.maxSize };
+    return;
+  }
   latestSnapshot = message;
   entityByPosition = new Map(message.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
 };
@@ -484,7 +491,10 @@ const frame = (time: number): void => {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
     lastTickCount = latestSnapshot.tickCount;
     renderer.draw(latestSnapshot);
-    statsDrawer.update(counts, latestSnapshot.tickCount);
+    const averages = engineSettings
+      ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
+      : ZERO_AVERAGE_RATIOS;
+    statsDrawer.update(counts, averages, latestSnapshot.tickCount);
   }
   renderStats(counts);
   perfEl.textContent = formatPerf();

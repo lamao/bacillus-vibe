@@ -1,7 +1,7 @@
 import { DefaultRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
-import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot } from './protocol';
+import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot, WorkerSettings } from './protocol';
 
 const INITIAL_POPULATION = 150;
 
@@ -117,6 +117,12 @@ function loop(): void {
 
   postSnapshotIfDue();
 }
+
+// Settings never changes after this, so it's posted once up front rather than repeated
+// on every snapshot; sent before the first postSnapshot() so it's guaranteed to arrive
+// first (postMessage preserves send order on a single channel).
+const settingsMessage: WorkerSettings = { type: 'settings', maxAge: settings.maxAge, maxSize: settings.maxSize };
+self.postMessage(settingsMessage);
 
 postSnapshot();
 setInterval(loop, SNAPSHOT_INTERVAL_MS);

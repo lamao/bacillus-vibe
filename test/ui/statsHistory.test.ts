@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ZERO_AVERAGE_RATIOS } from '../../src/ui/averages';
 import { StatsHistory } from '../../src/ui/statsHistory';
 
 describe('StatsHistory', () => {
@@ -9,19 +10,19 @@ describe('StatsHistory', () => {
 
   it('records one sample per distinct tick', () => {
     const history = new StatsHistory();
-    history.record(1, 10, new Map());
-    history.record(1, 99, new Map()); // same tick, ignored
-    history.record(2, 20, new Map());
+    history.record(1, 10, new Map(), ZERO_AVERAGE_RATIOS);
+    history.record(1, 99, new Map(), ZERO_AVERAGE_RATIOS); // same tick, ignored
+    history.record(2, 20, new Map(), ZERO_AVERAGE_RATIOS);
     expect(history.window(500)).toEqual([
-      { tick: 1, total: 10, bySubstance: new Map() },
-      { tick: 2, total: 20, bySubstance: new Map() },
+      { tick: 1, total: 10, bySubstance: new Map(), averages: ZERO_AVERAGE_RATIOS },
+      { tick: 2, total: 20, bySubstance: new Map(), averages: ZERO_AVERAGE_RATIOS },
     ]);
   });
 
   it('filters window() to samples within the last N ticks of the latest one', () => {
     const history = new StatsHistory();
     for (let tick = 0; tick <= 1000; tick += 100) {
-      history.record(tick, tick, new Map());
+      history.record(tick, tick, new Map(), ZERO_AVERAGE_RATIOS);
     }
     const windowed = history.window(500);
     expect(windowed.map((s) => s.tick)).toEqual([500, 600, 700, 800, 900, 1000]);
@@ -29,15 +30,22 @@ describe('StatsHistory', () => {
 
   it('prunes samples older than the widest offered window (10,000 ticks)', () => {
     const history = new StatsHistory();
-    history.record(0, 0, new Map());
-    history.record(10_001, 1, new Map());
+    history.record(0, 0, new Map(), ZERO_AVERAGE_RATIOS);
+    history.record(10_001, 1, new Map(), ZERO_AVERAGE_RATIOS);
     // the tick-0 sample is now more than 10,000 ticks behind the latest and should be dropped
     expect(history.window(10_000).map((s) => s.tick)).toEqual([10_001]);
   });
 
   it('never prunes down to zero samples even when the very first one is already stale', () => {
     const history = new StatsHistory();
-    history.record(0, 0, new Map());
+    history.record(0, 0, new Map(), ZERO_AVERAGE_RATIOS);
     expect(history.window(10_000).map((s) => s.tick)).toEqual([0]);
+  });
+
+  it('records the averages alongside the population counts for each sample', () => {
+    const history = new StatsHistory();
+    const averages = { avgEnergy: 0.5, avgAge: 0.2, avgSize: 0.8 };
+    history.record(1, 10, new Map(), averages);
+    expect(history.window(500)[0].averages).toEqual(averages);
   });
 });
