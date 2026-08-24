@@ -186,9 +186,12 @@ button[aria-pressed='true'] {
      grow past canvas-wrap and cover the footer's controls on a short (e.g. mobile)
      viewport — the close button stays reachable regardless of screen size. Also stays
      clear of the docked stats drawer at the bottom (--stats-drawer-height, kept live by
-     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded) so the two
-     panels never overlap. */
-  min-height: 40rem;
+     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded). min-height
+     is capped by the same expression via min() so it can never exceed max-height — a
+     browser resolves that conflict by letting min-height win outright, which would
+     force the panel back out to 40rem (and behind the drawer) the moment the drawer
+     expands enough to push max-height below it. */
+  min-height: min(40rem, calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem));
   max-height: calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem);
   overflow: hidden;
   background: rgba(16, 24, 43, 0.92);
