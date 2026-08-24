@@ -77,6 +77,17 @@ export class StatsDrawer {
     this.bar.addEventListener('click', () => this.setExpanded(!this.expanded));
     this.prevBtn.addEventListener('click', () => this.changePage(-1));
     this.nextBtn.addEventListener('click', () => this.changePage(1));
+
+    // Published as a CSS variable (rather than a hardcoded collapsed-bar height) so the
+    // inspector panel — an independent overlay anchored to canvas-wrap's top — can keep
+    // its max-height clear of however tall this drawer currently is, collapsed or
+    // expanded, without the two components needing to know about each other's layout.
+    new ResizeObserver(() => this.publishHeight()).observe(this.root);
+    this.publishHeight();
+  }
+
+  private publishHeight(): void {
+    document.documentElement.style.setProperty('--stats-drawer-height', `${this.root.getBoundingClientRect().height}px`);
   }
 
   /** Called once per animation frame with the latest population counts and tick. */

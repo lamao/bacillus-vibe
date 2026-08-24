@@ -184,9 +184,12 @@ button[aria-pressed='true'] {
      tick (e.g. an organic wanders off, leaving an empty cell or a corpse). Capped by
      max-height, with overflow clipped rather than scrollable, so the panel can never
      grow past canvas-wrap and cover the footer's controls on a short (e.g. mobile)
-     viewport — the close button stays reachable regardless of screen size. */
+     viewport — the close button stays reachable regardless of screen size. Also stays
+     clear of the docked stats drawer at the bottom (--stats-drawer-height, kept live by
+     StatsDrawer via ResizeObserver — 56px collapsed, taller when expanded) so the two
+     panels never overlap. */
   min-height: 40rem;
-  max-height: calc(100% - 1.2rem);
+  max-height: calc(100% - 1.2rem - var(--stats-drawer-height, 56px) - 0.6rem);
   overflow: hidden;
   background: rgba(16, 24, 43, 0.92);
   border: 1px solid var(--border);
