@@ -1,11 +1,20 @@
 import { Substance } from '../engine/types';
 import { AverageRatios } from './averages';
 
+/** Births/deaths per second, wall-clock (see main.ts's sampleBirthsDeaths — a once-per-second diff of the engine's cumulative counters, not a per-tick count). */
+export interface BirthsDeathsRate {
+  births: number;
+  deaths: number;
+}
+
+export const ZERO_BIRTHS_DEATHS_RATE: BirthsDeathsRate = { births: 0, deaths: 0 };
+
 export interface StatsSample {
   tick: number;
   total: number;
   bySubstance: ReadonlyMap<Substance, number>;
   averages: AverageRatios;
+  birthsDeaths: BirthsDeathsRate;
 }
 
 /** Time windows offered by the stats drawer's "Last N ticks" chips. */
@@ -23,10 +32,16 @@ export class StatsHistory {
   private samples: StatsSample[] = [];
 
   /** Records a sample for `tick`, ignored if `tick` matches the most recently recorded one. */
-  record(tick: number, total: number, bySubstance: ReadonlyMap<Substance, number>, averages: AverageRatios): void {
+  record(
+    tick: number,
+    total: number,
+    bySubstance: ReadonlyMap<Substance, number>,
+    averages: AverageRatios,
+    birthsDeaths: BirthsDeathsRate,
+  ): void {
     const last = this.samples[this.samples.length - 1];
     if (last && last.tick === tick) return;
-    this.samples.push({ tick, total, bySubstance, averages });
+    this.samples.push({ tick, total, bySubstance, averages, birthsDeaths });
     while (this.samples.length > 1 && tick - this.samples[0].tick > MAX_TIME_WINDOW) {
       this.samples.shift();
     }

@@ -18,12 +18,35 @@ describe('tick', () => {
     const o = organic({ x: 5, y: 5 }, { dna: dna({ consume: 'Sun' }), energy: 100, age: 0 });
     place(grid, o);
     let idc = 0;
-    tick(grid, settings, new MockRNG([0.5]), () => idc++);
+    const first = tick(grid, settings, new MockRNG([0.5]), () => idc++);
     expect(grid.get(5, 5)).toBe(o);
     expect(o.age).toBe(1);
-    tick(grid, settings, new MockRNG([0.5]), () => idc++);
+    expect(first).toEqual({ births: 0, deaths: 0 });
+    const second = tick(grid, settings, new MockRNG([0.5]), () => idc++);
     // age reaches maxAge(2) -> dies this tick, corpse left behind
     expect(grid.get(5, 5)).toMatchObject({ kind: 'mineral' });
+    expect(second).toEqual({ births: 0, deaths: 1 });
+  });
+
+  it("returns the reproduce phase's birth count for a hand-built reproducing genome", () => {
+    // A single-state genome that always chooses Split (Attempt) and never leaves state 0
+    // (Random is always >= 0, jumpOffset 0 loops back to itself) — same pattern as the
+    // hunting genome below, but for reproduce() instead of moveOrganics().
+    const splitForever: Instruction = {
+      action: { type: 'Split', mode: 'Attempt' },
+      sensor: 'Random',
+      comparator: '>=',
+      threshold: 0,
+      jumpOffset: 0,
+    };
+    const settings = testSettings({ reproductionThreshold: 500, defaultSize: 100, mutationRate: 0 });
+    const grid = emptyGrid(settings);
+    const parent = organic({ x: 5, y: 5 }, { dna: dna({ behavior: [splitForever] }), energy: 1000, size: 1000 });
+    place(grid, parent);
+    let idc = 0;
+    const result = tick(grid, settings, new MockRNG([0.5]), () => idc++);
+    expect(result).toEqual({ births: 1, deaths: 0 });
+    expect(grid.entities()).toHaveLength(2); // parent + offspring
   });
 
   it('drives movement end-to-end via decideAction for a hand-built hunting genome (#9)', () => {
@@ -98,5 +121,20 @@ describe('Simulation', () => {
     sim.step();
     expect(sim.tickCount).toBe(1);
     expect(o?.energy).toBeLessThan(before);
+  });
+
+  it('step() accumulates totalBirths and totalDeaths across multiple ticks (not just the latest one)', () => {
+    const settings = testSettings({ maxAge: 2, permanentConsumption: 0, sunYield: 0 });
+    const sim = new Simulation(settings, new MockRNG([0.5]));
+    sim.spawnOrganicAt({ x: 5, y: 5 }, dna({ consume: 'Sun' }));
+    expect(sim.totalBirths).toBe(0);
+    expect(sim.totalDeaths).toBe(0);
+
+    sim.step(); // age 0 -> 1, still under maxAge(2)
+    expect(sim.totalDeaths).toBe(0);
+
+    sim.step(); // age reaches maxAge(2) -> dies this tick
+    expect(sim.totalBirths).toBe(0);
+    expect(sim.totalDeaths).toBe(1);
   });
 });

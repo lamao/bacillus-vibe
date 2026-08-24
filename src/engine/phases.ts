@@ -248,13 +248,16 @@ export function moveOrganics(grid: Grid, settings: Settings): void {
  * are at or above ReproductionThreshold spend a randomized DefaultSize (+/-25%)
  * chunk of energy to attempt a split. A single random cell within
  * ReproductionRange is tried; if it's occupied or off-grid the split is
- * abandoned and part of the spent energy is refunded.
+ * abandoned and part of the spent energy is refunded. Returns the number of
+ * offspring successfully placed this call (a birth count, for #40's Births &
+ * deaths tab — a failed/refunded attempt doesn't count).
  */
-export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): void {
+export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () => number): number {
   const candidates = grid
     .organics()
     .filter((o) => o.chosenAction?.type === 'Split' && o.energy >= settings.reproductionThreshold);
 
+  let births = 0;
   for (const parent of candidates) {
     const spent = settings.defaultSize * (1 + (rng.next() * 0.5 - 0.25));
     parent.energy -= spent;
@@ -279,10 +282,12 @@ export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () =
       };
       grid.set(tx, ty, offspring);
       parent.size -= spent;
+      births += 1;
     } else {
       parent.energy += spent * settings.returnHealthWhenReproductionFails;
     }
   }
+  return births;
 }
 
 /**
@@ -397,8 +402,11 @@ export function exhaust(grid: Grid, settings: Settings): void {
 /**
  * Phase 8: organics that ran out of energy or hit MaxAge die, leaving a corpse
  * mineral behind if they still had body mass. Depleted minerals disappear.
+ * Returns the number of organics that died this call (for #40's Births &
+ * deaths tab).
  */
-export function cleanup(grid: Grid, settings: Settings): void {
+export function cleanup(grid: Grid, settings: Settings): number {
+  let deaths = 0;
   for (const organic of grid.organics()) {
     if (organic.energy > 0 && organic.age < settings.maxAge) continue;
 
@@ -412,6 +420,7 @@ export function cleanup(grid: Grid, settings: Settings): void {
       };
       grid.set(corpse.position.x, corpse.position.y, corpse);
     }
+    deaths += 1;
   }
 
   for (const mineral of grid.minerals()) {
@@ -419,4 +428,5 @@ export function cleanup(grid: Grid, settings: Settings): void {
       grid.clear(mineral.position.x, mineral.position.y);
     }
   }
+  return deaths;
 }

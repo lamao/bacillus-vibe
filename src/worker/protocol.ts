@@ -32,6 +32,9 @@ export type WorkerRequest =
 export interface SimulationSnapshot extends GridView {
   type: 'state';
   tickCount: number;
+  /** Cumulative since the simulation started; diffed client-side into a per-second rate for #40's Births & deaths tab. */
+  totalBirths: number;
+  totalDeaths: number;
 }
 
 /**
