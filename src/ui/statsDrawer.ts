@@ -30,11 +30,18 @@ const TOTAL_LINE_COLOR = '#e6e9f2';
 const AXIS_LABEL_COLOR = '#5b6376';
 
 /**
- * Titles of the drawer's paged-carousel tabs, in display order. Population (#38),
- * Averages (#39), and Births & deaths (#40) are implemented; Composition (later issue)
- * extends this array and adds a matching branch in `renderChart` — no shell changes needed.
+ * Titles of the drawer's paged-carousel tabs, in display order: Population (#38),
+ * Averages (#39), Births & deaths (#40), Composition (#41) — the full #27 set.
  */
-const PAGE_TITLES = ['Population', 'Averages', 'Births & deaths'] as const;
+const PAGE_TITLES = ['Population', 'Averages', 'Births & deaths', 'Composition'] as const;
+
+/**
+ * The Composition tab's two lines. Organic is the exact same series as the Population
+ * tab's Total (formatStats() already defines Population as organics.length) — drawn in
+ * a different color here to fit this page's organic/mineral framing, not a new metric.
+ */
+const ORGANIC_LINE_COLOR = '#4f8cff';
+const MINERAL_LINE_COLOR = '#8b93a7';
 
 /**
  * The Averages tab's three lines: the same 0-1 ratios the engine's own instruction-
@@ -118,7 +125,7 @@ export class StatsDrawer {
 
   /** Called once per animation frame with the latest population counts, averages, births/deaths rate, and tick. */
   update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, tick: number): void {
-    this.history.record(tick, counts.total, counts.bySubstance, averages, birthsDeaths);
+    this.history.record(tick, counts.total, counts.minerals, counts.bySubstance, averages, birthsDeaths);
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
   }
@@ -224,6 +231,9 @@ export class StatsDrawer {
       case 2:
         this.renderBirthsDeathsChart(samples);
         break;
+      case 3:
+        this.renderCompositionChart(samples);
+        break;
     }
   }
 
@@ -271,6 +281,43 @@ export class StatsDrawer {
       this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxRate), line.color, 2));
       this.legendEl.appendChild(this.legendItem(line.color, line.label));
     }
+  }
+
+  private renderCompositionChart(samples: StatsSample[]): void {
+    const maxValue = samples.reduce((max, sample) => Math.max(max, sample.total, sample.minerals), 0);
+    this.chartEl.appendChild(
+      this.polyline(
+        scaleLinePoints(
+          samples.map((s) => s.total),
+          CHART_WIDTH,
+          CHART_HEIGHT,
+          CHART_MARGIN,
+          maxValue,
+        ),
+        ORGANIC_LINE_COLOR,
+        2.5,
+      ),
+    );
+    this.chartEl.appendChild(
+      this.polyline(
+        scaleLinePoints(
+          samples.map((s) => s.minerals),
+          CHART_WIDTH,
+          CHART_HEIGHT,
+          CHART_MARGIN,
+          maxValue,
+        ),
+        MINERAL_LINE_COLOR,
+        1.75,
+      ),
+    );
+
+    // Unlike the other tabs' static legend labels, this one shows the live current
+    // count next to each line (matching the mockup) since it's the only tab where the
+    // legend doubles as the reading a viewer would otherwise get from per-substance chips.
+    const latest = samples[samples.length - 1];
+    this.legendEl.appendChild(this.legendItem(ORGANIC_LINE_COLOR, `Organic ${latest?.total ?? 0} (= Population)`));
+    this.legendEl.appendChild(this.legendItem(MINERAL_LINE_COLOR, `Mineral ${latest?.minerals ?? 0}`));
   }
 
   private axisLabel(y: number, text: string): SVGTextElement {
