@@ -65,6 +65,10 @@ export class StatsDrawer {
     this.prevBtn.innerHTML = svgIcon(ARROW_LEFT, 18);
     this.nextBtn.innerHTML = svgIcon(ARROW_RIGHT, 18);
     this.chartEl.setAttribute('viewBox', `0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`);
+    // The chart's CSS box (esp. on mobile) is nowhere near this viewBox's aspect ratio;
+    // without "none" the default xMidYMid-meet scaling would preserve that ratio and
+    // letterbox the chart, leaving a large empty band above/below the plotted lines.
+    this.chartEl.setAttribute('preserveAspectRatio', 'none');
 
     this.buildDots();
     this.buildWindowChips();
