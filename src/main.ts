@@ -130,6 +130,8 @@ const postToWorker = (message: WorkerRequest): void => worker.postMessage(messag
 
 let latestSnapshot: SimulationSnapshot | null = null;
 let entityByPosition = new Map<string, Entity>();
+/** Id-keyed index of organics only (minerals have no stable id), so the inspector can keep following an organic as it moves. */
+let organicById = new Map<number, Organic>();
 /** Settings never changes after the worker starts, so this is captured once from its one-off 'settings' message rather than resent with every snapshot. */
 let engineSettings: { maxAge: number; maxSize: number } | null = null;
 
@@ -141,6 +143,9 @@ worker.onmessage = (event: MessageEvent) => {
   }
   latestSnapshot = message;
   entityByPosition = new Map(message.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
+  organicById = new Map(
+    message.entities.filter((entity): entity is Organic => entity.kind === 'organic').map((entity) => [entity.id, entity]),
+  );
 };
 
 const renderer = new Renderer(canvas);
@@ -149,7 +154,13 @@ const statsDrawer = new StatsDrawer();
 let paused = false;
 let ticksPerSecond = TICK_RATE_PRESETS[DEFAULT_TICK_RATE_INDEX];
 let inspectMode = false;
-let inspectedCell: Position | null = null;
+/**
+ * What the inspector is currently tracking. Tapping an organic tracks it by id so it
+ * keeps being shown as it moves (see #46); tapping a mineral or empty cell tracks the
+ * position instead, since minerals have no stable id but also never move.
+ */
+type InspectedTarget = { type: 'entity'; id: number } | { type: 'cell'; position: Position };
+let inspectedTarget: InspectedTarget | null = null;
 /** Instruction matrix state tapped for detail in the inspector; reset whenever a new cell is inspected. */
 let selectedStateIndex: number | null = null;
 
@@ -186,7 +197,7 @@ const exitInspectMode = (): void => {
   inspectBtn.textContent = 'Inspect';
   canvas.classList.remove('inspecting');
   hintEl.textContent = 'Tap the grid to add a creature';
-  inspectedCell = null;
+  inspectedTarget = null;
   selectedStateIndex = null;
 };
 
@@ -221,7 +232,8 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   const cell = renderer.cellFromClientPoint(event.clientX, event.clientY, latestSnapshot);
   if (!cell) return;
   if (inspectMode) {
-    inspectedCell = cell;
+    const tapped = entityByPosition.get(`${cell.x},${cell.y}`);
+    inspectedTarget = tapped?.kind === 'organic' ? { type: 'entity', id: tapped.id } : { type: 'cell', position: cell };
     selectedStateIndex = null;
   } else {
     postToWorker({ type: 'spawnOrganicAt', position: cell });
@@ -446,16 +458,33 @@ function buildMatrixSection(entity: Organic): HTMLElement {
 let lastRenderSignature: string | null = null;
 
 const renderInspector = (): void => {
-  if (!inspectMode || !inspectedCell) {
+  if (!inspectMode || !inspectedTarget) {
     inspectorEl.classList.add('hidden');
     lastRenderSignature = null;
     return;
   }
 
-  const entity = entityByPosition.get(`${inspectedCell.x},${inspectedCell.y}`) ?? null;
-  const rows: InspectorRow[] = [{ label: 'Cell', value: `${inspectedCell.x}, ${inspectedCell.y}` }];
+  // Entity targets (organics) are resolved by id every frame so the inspector keeps
+  // following the same creature as it moves; a gone id (the organic died) is shown
+  // distinctly from "Empty" rather than falling through to whatever now occupies its
+  // old cell. Cell targets (minerals, empty taps) stay position-based, since minerals
+  // never move and have no stable id to track by.
+  const entity: Entity | null =
+    inspectedTarget.type === 'entity'
+      ? (organicById.get(inspectedTarget.id) ?? null)
+      : (entityByPosition.get(`${inspectedTarget.position.x},${inspectedTarget.position.y}`) ?? null);
+  const gone = inspectedTarget.type === 'entity' && !entity;
 
-  if (!entity) {
+  const rows: InspectorRow[] = [];
+  if (entity) {
+    rows.push({ label: 'Cell', value: `${entity.position.x}, ${entity.position.y}` });
+  } else if (inspectedTarget.type === 'cell') {
+    rows.push({ label: 'Cell', value: `${inspectedTarget.position.x}, ${inspectedTarget.position.y}` });
+  }
+
+  if (gone) {
+    rows.push({ label: 'Status', value: 'Gone' });
+  } else if (!entity) {
     rows.push({ label: 'Empty', value: '—' });
   } else {
     const substance = substanceOf(entity);
