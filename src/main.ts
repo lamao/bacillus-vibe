@@ -2,7 +2,6 @@ import {
   Action,
   Entity,
   INSTRUCTION_MATRIX_SIZE,
-  Instruction,
   MoveMode,
   Organic,
   Position,
@@ -39,31 +38,154 @@ const ACTION_COLORS: Record<Action['type'], string> = {
   Rest: '#3a4258',
 };
 
-const MOVE_MODE_ABBR: Record<MoveMode, string> = {
-  TowardConsume: 'C',
-  AwayFromToxin: 'T',
-  TowardOpenSpace: 'O',
-  Random: 'R',
-  Hold: 'H',
+/** Icon (see ICON_DEFS_SVG below) filling each instruction matrix cell, keyed by action type. */
+const ACTION_ICON: Record<Action['type'], string> = {
+  Move: 'ic-move',
+  Produce: 'ic-produce',
+  Split: 'ic-split',
+  Rest: 'ic-rest',
 };
 
-const PRODUCE_MODE_ABBR: Record<ProduceMode, string> = {
-  Release: 'R',
-  Hold: 'H',
+/**
+ * Corner-badge icon layered on top of the action icon for the modes that have one.
+ * Move's Hold deliberately reuses Rest's pause-bars icon rather than a distinct glyph,
+ * since both mean "stay put this state".
+ */
+const MOVE_MODE_ICON: Record<MoveMode, string> = {
+  TowardConsume: 'ic-target',
+  AwayFromToxin: 'ic-hazard',
+  TowardOpenSpace: 'ic-open',
+  Random: 'ic-random',
+  Hold: 'ic-rest',
 };
 
-/** Compact per-cell label for the instruction matrix grid, e.g. "Mv·C", "Pr·R", "Spl", "Rst". */
-function formatCellLabel(instruction: Instruction): string {
-  switch (instruction.action.type) {
+const PRODUCE_MODE_ICON: Record<ProduceMode, string> = {
+  Release: 'ic-release',
+  Hold: 'ic-lock',
+};
+
+/** Mode badge icon id for an action, or null for Split/Rest which have no mode. */
+function modeIconFor(action: Action): string | null {
+  switch (action.type) {
     case 'Move':
-      return `Mv·${MOVE_MODE_ABBR[instruction.action.mode]}`;
+      return MOVE_MODE_ICON[action.mode];
     case 'Produce':
-      return `Pr·${PRODUCE_MODE_ABBR[instruction.action.mode]}`;
+      return PRODUCE_MODE_ICON[action.mode];
     case 'Split':
-      return 'Spl';
     case 'Rest':
-      return 'Rst';
+      return null;
   }
+}
+
+/** One-line descriptions for the icon legend popup; not needed for the matrix cells themselves. */
+const ACTION_DESCRIPTIONS: Record<Action['type'], string> = {
+  Move: 'Steps to a neighbour cell',
+  Produce: 'Converts food into waste',
+  Split: 'Divides into a new organic',
+  Rest: 'Does nothing this state',
+};
+
+const MOVE_MODE_DESCRIPTIONS: Record<MoveMode, string> = {
+  TowardConsume: 'Steps toward its food substance',
+  AwayFromToxin: 'Steps away from what damages it',
+  TowardOpenSpace: 'Heads for the emptiest neighbour cell',
+  Random: 'Picks any open neighbour cell',
+  Hold: 'Stays put this state',
+};
+
+const PRODUCE_MODE_DESCRIPTIONS: Record<ProduceMode, string> = {
+  Release: 'Expels waste into the cell',
+  Hold: 'Retains waste in the body',
+};
+
+/**
+ * Sprite sheet of every instruction-matrix icon, injected once into the document so
+ * `<use href="#ic-...">` can reference them cheaply from many cells without repeating
+ * path data. Kept hidden (not display:none, which some browsers exclude from `<use>`
+ * lookups) via zero size + absolute positioning.
+ */
+const ICON_DEFS_SVG = `
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ic-move" viewBox="0 0 24 24">
+      <path d="M6 18 L18 6 M18 6 H10 M18 6 V14" />
+    </symbol>
+    <symbol id="ic-produce" viewBox="0 0 24 24">
+      <rect x="3" y="16.3" width="18" height="4.2" rx="2.1" />
+      <rect x="5" y="12.8" width="14" height="3.9" rx="1.95" />
+      <clipPath id="ic-produce-clip-1">
+        <rect x="0" y="0" width="24" height="10.5" />
+      </clipPath>
+      <clipPath id="ic-produce-clip-2">
+        <rect x="0" y="0" width="24" height="9.5" />
+      </clipPath>
+      <g transform="translate(0 2.6)">
+        <g transform="translate(12 6) scale(1 0.8) translate(-12 -6)">
+          <g clip-path="url(#ic-produce-clip-2)">
+            <g clip-path="url(#ic-produce-clip-1)" transform="translate(0 1.5)">
+              <path
+                d="M12.00,1.80 C15.57,4.43 16.20,6.99 16.20,9.30 A4.20,4.20 0 1 1 7.80,9.30 C7.80,6.99 8.43,4.43 12.00,1.80 Z"
+                transform="translate(12 9.3) scale(-1 0.7) translate(-12 -9.3) rotate(-18 12 9.3)"
+              />
+            </g>
+          </g>
+        </g>
+      </g>
+    </symbol>
+    <symbol id="ic-split" viewBox="0 0 24 24">
+      <circle cx="8" cy="12" r="4.3" />
+      <circle cx="16" cy="12" r="4.3" />
+      <path d="M11.6 12 H12.4" />
+    </symbol>
+    <symbol id="ic-rest" viewBox="0 0 24 24">
+      <path d="M8.5 5.5 V18.5 M15.5 5.5 V18.5" />
+    </symbol>
+    <symbol id="ic-target" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="6.5" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </symbol>
+    <symbol id="ic-hazard" viewBox="0 0 24 24">
+      <path d="M12 4.2 L20.5 19 H3.5 Z" />
+      <path d="M12 10 V14" />
+      <circle cx="12" cy="16.7" r="0.9" fill="currentColor" stroke="none" />
+    </symbol>
+    <symbol id="ic-open" viewBox="0 0 24 24">
+      <path d="M8 4.5 H4.5 V8" />
+      <path d="M16 4.5 H19.5 V8" />
+      <path d="M8 19.5 H4.5 V16" />
+      <path d="M16 19.5 H19.5 V16" />
+    </symbol>
+    <symbol id="ic-random" viewBox="0 0 24 24">
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="16" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none" />
+    </symbol>
+    <symbol id="ic-release" viewBox="0 0 24 24">
+      <path d="M12 12 L17 7 M17 7 H12.5 M17 7 V11.5" />
+      <path d="M12 12 L7 17 M7 17 H11.5 M7 17 V12.5" />
+    </symbol>
+    <symbol id="ic-lock" viewBox="0 0 24 24">
+      <rect x="6.5" y="10.5" width="11" height="9" rx="1.6" />
+      <path d="M9 10.5 V7.8 A3 3 0 0 1 15 7.8 V10.5" />
+    </symbol>
+  </defs>
+</svg>`;
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Builds a `<svg><use></svg>` referencing one of ICON_DEFS_SVG's symbols. */
+function buildIcon(iconId: string, className: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `#${iconId}`);
+  svg.appendChild(use);
+  return svg;
 }
 
 function formatThreshold(threshold: number): string {
@@ -97,6 +219,10 @@ const perfEl = document.querySelector<HTMLElement>('#perf');
 const canvasWrap = document.querySelector<HTMLElement>('#canvas-wrap');
 const hintEl = document.querySelector<HTMLElement>('#hint');
 const buildInfoEl = document.querySelector<HTMLElement>('#build-info');
+const iconLegendEl = document.querySelector<HTMLElement>('#icon-legend');
+const iconLegendBackdropEl = document.querySelector<HTMLElement>('#icon-legend-backdrop');
+const iconLegendCloseBtn = document.querySelector<HTMLButtonElement>('#icon-legend-close');
+const iconLegendContentEl = document.querySelector<HTMLElement>('#icon-legend-content');
 
 if (
   !canvas ||
@@ -113,10 +239,16 @@ if (
   !perfEl ||
   !canvasWrap ||
   !hintEl ||
-  !buildInfoEl
+  !buildInfoEl ||
+  !iconLegendEl ||
+  !iconLegendBackdropEl ||
+  !iconLegendCloseBtn ||
+  !iconLegendContentEl
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
+
+document.body.insertAdjacentHTML('afterbegin', ICON_DEFS_SVG);
 
 buildInfoEl.textContent = __BUILD_ID__;
 buildInfoEl.title = `Build ${__BUILD_ID__}`;
@@ -190,6 +322,19 @@ addBtn.addEventListener('click', () => {
   postToWorker({ type: 'spawnRandomOrganic' });
 });
 
+/** Toggles the static instruction-icon legend popup; its content is built once at startup, not per-render. */
+const closeLegend = (): void => {
+  iconLegendEl.classList.add('hidden');
+};
+
+const openLegend = (): void => {
+  iconLegendEl.classList.remove('hidden');
+};
+
+iconLegendCloseBtn.addEventListener('click', closeLegend);
+iconLegendBackdropEl.addEventListener('click', closeLegend);
+iconLegendContentEl.replaceChildren(buildLegendContent());
+
 /** Turns off inspect mode and hides the inspector, however it was entered. */
 const exitInspectMode = (): void => {
   inspectMode = false;
@@ -199,6 +344,7 @@ const exitInspectMode = (): void => {
   hintEl.textContent = 'Tap the grid to add a creature';
   inspectedTarget = null;
   selectedStateIndex = null;
+  closeLegend();
 };
 
 inspectBtn.addEventListener('click', () => {
@@ -395,6 +541,20 @@ function buildMatrixSection(entity: Organic): HTMLElement {
   const section = document.createElement('div');
   section.className = 'matrix-section';
 
+  const header = document.createElement('div');
+  header.className = 'matrix-header';
+  const label = document.createElement('span');
+  label.className = 'matrix-label';
+  label.textContent = 'Instructions';
+  const legendToggle = document.createElement('button');
+  legendToggle.type = 'button';
+  legendToggle.className = 'legend-toggle';
+  legendToggle.textContent = '?';
+  legendToggle.setAttribute('aria-label', 'Show instruction icon legend');
+  legendToggle.addEventListener('click', openLegend);
+  header.append(label, legendToggle);
+  section.appendChild(header);
+
   const grid = document.createElement('div');
   grid.className = 'matrix-grid';
   grid.setAttribute('role', 'group');
@@ -406,7 +566,14 @@ function buildMatrixSection(entity: Organic): HTMLElement {
     cell.type = 'button';
     cell.className = 'matrix-cell';
     cell.style.backgroundColor = ACTION_COLORS[instruction.action.type];
-    cell.textContent = formatCellLabel(instruction);
+    cell.appendChild(buildIcon(ACTION_ICON[instruction.action.type], 'matrix-cell-icon'));
+    const badgeIcon = modeIconFor(instruction.action);
+    if (badgeIcon) {
+      const badge = document.createElement('span');
+      badge.className = 'matrix-cell-badge';
+      badge.appendChild(buildIcon(badgeIcon, ''));
+      cell.appendChild(badge);
+    }
     cell.title = `State ${i}: ${formatAction(instruction.action)}`;
     if (i === entity.currentState) {
       cell.classList.add('current');
@@ -447,6 +614,94 @@ function buildMatrixSection(entity: Organic): HTMLElement {
   section.appendChild(detail);
 
   return section;
+}
+
+/**
+ * Builds the icon legend popup's content: one swatch per action, then the mode badges
+ * grouped by which action they belong to. Purely static (doesn't depend on any entity),
+ * so it's built once at startup rather than on every render like the matrix itself.
+ */
+function buildLegendContent(): HTMLElement {
+  const root = document.createDocumentFragment();
+
+  const actions = document.createElement('div');
+  actions.className = 'legend-actions';
+  for (const type of Object.keys(ACTION_COLORS) as Action['type'][]) {
+    const card = document.createElement('div');
+    card.className = 'legend-action';
+    const swatch = document.createElement('div');
+    swatch.className = 'legend-action-swatch';
+    swatch.style.backgroundColor = ACTION_COLORS[type];
+    swatch.appendChild(buildIcon(ACTION_ICON[type], ''));
+    swatch.title = ACTION_DESCRIPTIONS[type];
+    const name = document.createElement('span');
+    name.className = 'legend-action-name';
+    name.textContent = type;
+    card.append(swatch, name);
+    actions.appendChild(card);
+  }
+
+  const groups = document.createElement('div');
+  groups.className = 'legend-groups';
+
+  const buildGroup = (title: string, dotColor: string, rows: { icon: string; name: string; desc: string }[]): HTMLElement => {
+    const group = document.createElement('div');
+    const groupTitle = document.createElement('div');
+    groupTitle.className = 'legend-group-title';
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.backgroundColor = dotColor;
+    groupTitle.append(dot, document.createTextNode(title));
+    group.appendChild(groupTitle);
+
+    for (const row of rows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'legend-row';
+      const badge = document.createElement('div');
+      badge.className = 'legend-badge';
+      badge.appendChild(buildIcon(row.icon, ''));
+      const copy = document.createElement('div');
+      copy.className = 'legend-copy';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = row.name;
+      const desc = document.createElement('span');
+      desc.className = 'desc';
+      desc.textContent = row.desc;
+      copy.append(name, desc);
+      rowEl.append(badge, copy);
+      group.appendChild(rowEl);
+    }
+    return group;
+  };
+
+  groups.appendChild(
+    buildGroup(
+      'Move modes',
+      ACTION_COLORS.Move,
+      (Object.keys(MOVE_MODE_ICON) as MoveMode[]).map((mode) => ({
+        icon: MOVE_MODE_ICON[mode],
+        name: mode,
+        desc: MOVE_MODE_DESCRIPTIONS[mode],
+      })),
+    ),
+  );
+  groups.appendChild(
+    buildGroup(
+      'Produce modes',
+      ACTION_COLORS.Produce,
+      (Object.keys(PRODUCE_MODE_ICON) as ProduceMode[]).map((mode) => ({
+        icon: PRODUCE_MODE_ICON[mode],
+        name: mode,
+        desc: PRODUCE_MODE_DESCRIPTIONS[mode],
+      })),
+    ),
+  );
+
+  root.append(actions, groups);
+  const wrapper = document.createElement('div');
+  wrapper.appendChild(root);
+  return wrapper;
 }
 
 /**
