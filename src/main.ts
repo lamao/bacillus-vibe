@@ -111,8 +111,26 @@ const ICON_DEFS_SVG = `
       <path d="M6 18 L18 6 M18 6 H10 M18 6 V14" />
     </symbol>
     <symbol id="ic-produce" viewBox="0 0 24 24">
-      <path d="M9.5 3.5 H14.5 M10 3.5 V9 L5.5 18.5 A1.5 1.5 0 0 0 7 20.5 H17 A1.5 1.5 0 0 0 18.5 18.5 L14 9 V3.5" />
-      <path d="M7.3 15.5 H16.7" />
+      <rect x="3" y="16.3" width="18" height="4.2" rx="2.1" />
+      <rect x="5" y="12.8" width="14" height="3.9" rx="1.95" />
+      <clipPath id="ic-produce-clip-1">
+        <rect x="0" y="0" width="24" height="10.5" />
+      </clipPath>
+      <clipPath id="ic-produce-clip-2">
+        <rect x="0" y="0" width="24" height="9.5" />
+      </clipPath>
+      <g transform="translate(0 2.6)">
+        <g transform="translate(12 6) scale(1 0.8) translate(-12 -6)">
+          <g clip-path="url(#ic-produce-clip-2)">
+            <g clip-path="url(#ic-produce-clip-1)" transform="translate(0 1.5)">
+              <path
+                d="M12.00,1.80 C15.57,4.43 16.20,6.99 16.20,9.30 A4.20,4.20 0 1 1 7.80,9.30 C7.80,6.99 8.43,4.43 12.00,1.80 Z"
+                transform="translate(12 9.3) scale(-1 0.7) translate(-12 -9.3) rotate(-18 12 9.3)"
+              />
+            </g>
+          </g>
+        </g>
+      </g>
     </symbol>
     <symbol id="ic-split" viewBox="0 0 24 24">
       <circle cx="8" cy="12" r="4.3" />
