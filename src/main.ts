@@ -138,11 +138,12 @@ const ICON_DEFS_SVG = `
       <path d="M16 19.5 H19.5 V16" />
     </symbol>
     <symbol id="ic-random" viewBox="0 0 24 24">
-      <circle cx="6.5" cy="7" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="17.5" cy="7" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="6.5" cy="17" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="17.5" cy="17" r="1.3" fill="currentColor" stroke="none" />
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="16" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none" />
     </symbol>
     <symbol id="ic-release" viewBox="0 0 24 24">
       <path d="M12 12 L17 7 M17 7 H12.5 M17 7 V11.5" />
