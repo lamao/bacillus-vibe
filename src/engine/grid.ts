@@ -1,5 +1,30 @@
 import { Entity, Mineral, Organic, Position, chebyshevDistance } from './types';
 
+/**
+ * Sorted (nearest-first), zero-centered offset lists for a given Chebyshev radius, memoized
+ * across all `Grid` instances since they depend only on `radius`, never on grid dimensions or
+ * query center. Avoids re-sorting on every `positionsInRange` call even though the engine only
+ * ever queries a handful of distinct radii (from `Settings`).
+ */
+const offsetCache = new Map<number, readonly Position[]>();
+
+function offsetsForRadius(radius: number): readonly Position[] {
+  let offsets = offsetCache.get(radius);
+  if (!offsets) {
+    const origin: Position = { x: 0, y: 0 };
+    const unsorted: Position[] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        unsorted.push({ x: dx, y: dy });
+      }
+    }
+    offsets = unsorted.sort((a, b) => chebyshevDistance(origin, a) - chebyshevDistance(origin, b));
+    offsetCache.set(radius, offsets);
+  }
+  return offsets;
+}
+
 export class Grid {
   readonly width: number;
   readonly height: number;
@@ -65,16 +90,11 @@ export class Grid {
   /** All in-bounds cell positions within Chebyshev `radius` of (x,y), excluding the center, nearest first. */
   positionsInRange(x: number, y: number, radius: number): Position[] {
     const result: Position[] = [];
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (this.inBounds(nx, ny)) result.push({ x: nx, y: ny });
-      }
+    for (const offset of offsetsForRadius(radius)) {
+      const nx = x + offset.x;
+      const ny = y + offset.y;
+      if (this.inBounds(nx, ny)) result.push({ x: nx, y: ny });
     }
-    const center = { x, y };
-    result.sort((a, b) => chebyshevDistance(center, a) - chebyshevDistance(center, b));
     return result;
   }
 
