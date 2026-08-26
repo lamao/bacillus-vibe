@@ -37,7 +37,9 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   mock implementation instead of depending on `Math.random()`.
   - `types.ts` — `Substance`, `DNA`, `Organic`, `Mineral`, `Entity`.
   - `grid.ts` — flat array-backed grid (occupancy lookup is O(1); range
-    queries are O(radius²), never O(population)).
+    queries are O(radius²), never O(population)); `entities`/`organics`/
+    `minerals` are backed by incrementally-maintained sets, so they're
+    O(population), never O(width×height)).
   - `dna.ts` — DNA generation and mutation.
   - `settings.ts` — all tunable simulation parameters (see table below),
     no hardcoded literals in the phase logic.
@@ -128,9 +130,12 @@ down its open questions against actual runs (`test/engine/determinism.test.ts`,
 - **RNG determinism** — `decideAction`'s per-tick `Random`-sensor draw (and
   every other random choice: movement, reproduction, mutation) flows through
   the single `RNG` instance injected into `Simulation`, consumed in a fixed
-  order (`grid.organics()`'s cell-index iteration). Two `Simulation`s seeded
-  identically produce byte-for-byte identical grids after thousands of ticks;
-  confirmed as a permanent regression test rather than a one-off check.
+  order (`grid.organics()`'s registration order — each organic keeps the
+  position it was first placed at for its whole lifetime; moving doesn't
+  reorder it, see `Grid`'s `organicSet`/`mineralSet` in `grid.ts`). Two
+  `Simulation`s seeded identically produce byte-for-byte identical grids
+  after thousands of ticks; confirmed as a permanent regression test rather
+  than a one-off check.
 - **`produceWaste`'s Hold-gating safety valve** — an organic that never
   chooses `Produce (Release)` hoards `accumulatedWaste` indefinitely with no
   cap. Across extended runs (thousands of ticks, evolving populations) this

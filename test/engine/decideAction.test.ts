@@ -89,8 +89,9 @@ describe('decideAction (phase 1)', () => {
     const passing = organic({ x: 0, y: 0 }, { dna: dna({ behavior: behaviorOf(instruction) }) });
     const failing = organic({ x: 5, y: 5 }, { dna: dna({ behavior: behaviorOf(instruction) }) });
     place(grid, passing, failing);
-    // grid.organics() walks cells in index order, so (0,0) is evaluated before (5,5),
-    // consuming rng values in that order: 0.3 (< 0.5, passes) then 0.7 (>= 0.5, fails).
+    // grid.organics() walks entities in registration order, so `passing` (placed first) is
+    // evaluated before `failing`, consuming rng values in that order: 0.3 (< 0.5, passes)
+    // then 0.7 (>= 0.5, fails).
     decideAction(grid, settings, new MockRNG([0.3, 0.7]));
     expect(passing.currentState).toBe(9);
     expect(failing.currentState).toBe(1);
