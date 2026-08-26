@@ -197,6 +197,26 @@ describe('decideAction (phase 1)', () => {
     expect(o.currentState).toBe(5); // neighborA and neighborB are in range; farAway (distance 4) isn't
   });
 
+  it('a Crowding sensor and a Move(TowardConsume) action in the same instruction both resolve correctly (shared visionRange scan)', () => {
+    const settings = testSettings({ visionRange: 2 });
+    const grid = emptyGrid(settings);
+    const instruction: Instruction = {
+      action: { type: 'Move', mode: 'TowardConsume' },
+      sensor: 'Crowding',
+      comparator: '>=',
+      threshold: 2,
+      jumpOffset: 7,
+    };
+    const o = organic({ x: 5, y: 5 }, { dna: dna({ consume: 'Green', behavior: behaviorOf(instruction) }) });
+    const food = mineral({ x: 6, y: 5 }, 'Green', 100); // distance 1, doesn't count toward Crowding (not an organic)
+    const neighborA = organic({ x: 4, y: 5 });
+    const neighborB = organic({ x: 6, y: 6 });
+    place(grid, o, food, neighborA, neighborB);
+    decideAction(grid, settings, new MockRNG([0]));
+    expect(o.direction).toEqual({ x: 1, y: 0 }); // stepped toward food
+    expect(o.currentState).toBe(7); // Crowding counted neighborA and neighborB: 2 >= 2
+  });
+
   it('Move(TowardConsume) sets direction toward the largest matching entity in range', () => {
     const settings = testSettings({ visionRange: 2 });
     const grid = emptyGrid(settings);
