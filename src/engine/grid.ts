@@ -12,14 +12,15 @@ function offsetsForRadius(radius: number): readonly Position[] {
   let offsets = offsetCache.get(radius);
   if (!offsets) {
     const origin: Position = { x: 0, y: 0 };
-    const unsorted: Position[] = [];
+    const built: Position[] = [];
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (dx === 0 && dy === 0) continue;
-        unsorted.push({ x: dx, y: dy });
+        built.push({ x: dx, y: dy });
       }
     }
-    offsets = unsorted.sort((a, b) => chebyshevDistance(origin, a) - chebyshevDistance(origin, b));
+    built.sort((a, b) => chebyshevDistance(origin, a) - chebyshevDistance(origin, b));
+    offsets = built;
     offsetCache.set(radius, offsets);
   }
   return offsets;
