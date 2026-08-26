@@ -1,7 +1,7 @@
 import { DefaultRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
-import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot, WorkerSettings } from './protocol';
+import { WORKER_LOOP_FPS, WorkerRequest, SnapshotMessage, WireEntity, WorkerSettings } from './protocol';
 
 const INITIAL_POPULATION = 150;
 
@@ -49,6 +49,14 @@ let ticksPerSecond = 60;
 let tickAccumulator = 0;
 let lastLoopTime: number | null = null;
 let lastPostTime: number | null = null;
+/**
+ * Ids of organics whose `dna.behavior` was included in the most recently posted snapshot —
+ * i.e. every organic currently alive as of that post. Compared against on the next post to
+ * decide which organics are newly-seen (their `behavior` needs sending) versus already-known
+ * (it can be omitted, see `WireDNA` in `./protocol`); replaced wholesale each time rather than
+ * only ever grown, so a dead organic's id naturally drops out instead of leaking forever.
+ */
+let organicIdsSentWithBehavior = new Set<number>();
 
 self.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerRequest;
@@ -74,15 +82,29 @@ self.onmessage = (event: MessageEvent) => {
   }
 };
 
+/** Builds this snapshot's wire entities, including `behavior` only for organics not present in `organicIdsSentWithBehavior`, then replaces it with exactly this snapshot's living organic ids. */
+function buildWireEntities(): WireEntity[] {
+  const aliveOrganicIds = new Set<number>();
+  const entities: WireEntity[] = simulation.grid.entities().map((entity) => {
+    if (entity.kind === 'mineral') return entity;
+    aliveOrganicIds.add(entity.id);
+    const { behavior, ...dnaRest } = entity.dna;
+    const isNewlySeen = !organicIdsSentWithBehavior.has(entity.id);
+    return { ...entity, dna: isNewlySeen ? { ...dnaRest, behavior } : dnaRest };
+  });
+  organicIdsSentWithBehavior = aliveOrganicIds;
+  return entities;
+}
+
 function postSnapshot(): void {
-  const snapshot: SimulationSnapshot = {
+  const snapshot: SnapshotMessage = {
     type: 'state',
     tickCount: simulation.tickCount,
     totalBirths: simulation.totalBirths,
     totalDeaths: simulation.totalDeaths,
     width: settings.width,
     height: settings.height,
-    entities: simulation.grid.entities(),
+    entities: buildWireEntities(),
   };
   self.postMessage(snapshot);
   lastPostTime = performance.now();
