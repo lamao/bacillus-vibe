@@ -215,8 +215,7 @@ export class StatsDrawer {
     this.totalValueEl.textContent = counts.total.toString();
     this.chipRowEl.replaceChildren();
     for (const substance of PHYSICAL_SUBSTANCES) {
-      const count = counts.bySubstance.get(substance);
-      if (!count) continue;
+      const count = counts.bySubstance.get(substance) ?? 0;
       const chip = document.createElement('span');
       chip.className = 'stats-chip-item';
       const swatch = document.createElement('span');

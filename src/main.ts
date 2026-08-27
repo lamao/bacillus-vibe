@@ -4,6 +4,7 @@ import {
   INSTRUCTION_MATRIX_SIZE,
   MoveMode,
   Organic,
+  PHYSICAL_SUBSTANCES,
   Position,
   ProduceMode,
   Substance,
@@ -589,9 +590,10 @@ const renderStats = (counts: StatCounts): void => {
   appendStatSegment(statsEl, `Tick ${latestSnapshot?.tickCount ?? 0}`, null);
   appendStatSegment(statsEl, `Population ${counts.total}`, totalTrend);
   appendStatSegment(statsEl, `Minerals ${counts.minerals}`, mineralsTrend);
-  const breakdown = [...counts.bySubstance.entries()].sort((a, b) => b[1] - a[1]);
-  for (const [substance, count] of breakdown) {
-    appendStatSegment(statsEl, `${substance} ${count}`, substanceTrends.get(substance) ?? null);
+  // Fixed PHYSICAL_SUBSTANCES order (not sorted by count) to match the stats bar's chips
+  // and the charts' line order, so a substance sits in the same position everywhere.
+  for (const substance of PHYSICAL_SUBSTANCES) {
+    appendStatSegment(statsEl, `${substance} ${counts.bySubstance.get(substance) ?? 0}`, substanceTrends.get(substance) ?? null);
   }
 };
 
