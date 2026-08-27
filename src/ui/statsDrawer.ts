@@ -1,4 +1,4 @@
-import { PHYSICAL_SUBSTANCES } from '../engine/types';
+import { ALL_SUBSTANCES, PHYSICAL_SUBSTANCES, Substance } from '../engine/types';
 import { AverageRatios } from './averages';
 import { scaleLinePoints } from './chart';
 import { SUBSTANCE_COLORS } from './renderer';
@@ -30,10 +30,11 @@ const TOTAL_LINE_COLOR = '#e6e9f2';
 const AXIS_LABEL_COLOR = '#5b6376';
 
 /**
- * Titles of the drawer's paged-carousel tabs, in display order: Population (#38),
- * Averages (#39), Births & deaths (#40), Composition (#41) — the full #27 set.
+ * Titles of the drawer's paged-carousel tabs, in display order: Population (#38), then
+ * Consume/Produce/Toxin/Composition — all four per-substance breakdowns of the
+ * population, grouped together — followed by Averages (#39) and Births & deaths (#40).
  */
-const PAGE_TITLES = ['Population', 'Averages', 'Births & deaths', 'Composition'] as const;
+const PAGE_TITLES = ['Population', 'Consume', 'Produce', 'Toxin', 'Composition', 'Averages', 'Births & deaths'] as const;
 
 /**
  * The Composition tab's two lines. Organic is the exact same series as the Population
@@ -125,7 +126,17 @@ export class StatsDrawer {
 
   /** Called once per animation frame with the latest population counts, averages, births/deaths rate, and tick. */
   update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, tick: number): void {
-    this.history.record(tick, counts.total, counts.minerals, counts.bySubstance, averages, birthsDeaths);
+    this.history.record({
+      tick,
+      total: counts.total,
+      minerals: counts.minerals,
+      bySubstance: counts.bySubstance,
+      byConsume: counts.byConsume,
+      byProduce: counts.byProduce,
+      byToxin: counts.byToxin,
+      averages,
+      birthsDeaths,
+    });
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
   }
@@ -204,8 +215,7 @@ export class StatsDrawer {
     this.totalValueEl.textContent = counts.total.toString();
     this.chipRowEl.replaceChildren();
     for (const substance of PHYSICAL_SUBSTANCES) {
-      const count = counts.bySubstance.get(substance);
-      if (!count) continue;
+      const count = counts.bySubstance.get(substance) ?? 0;
       const chip = document.createElement('span');
       chip.className = 'stats-chip-item';
       const swatch = document.createElement('span');
@@ -220,10 +230,18 @@ export class StatsDrawer {
   private renderChart(counts: StatCounts): void {
     const samples = this.history.window(this.selectedWindow);
     const latestTick = samples[samples.length - 1]?.tick ?? -1;
-    // Only the Population page's line set can change (which substances are present);
-    // Averages always draws the same fixed three lines, so its signature needs nothing extra.
-    const pageKey =
-      this.pageIndex === 0 ? PHYSICAL_SUBSTANCES.filter((substance) => (counts.bySubstance.get(substance) ?? 0) > 0).join(',') : '';
+    // Population/Consume/Produce/Toxin's line sets can each change (which substances are
+    // currently present); Composition, Averages, and Births & deaths always draw the same
+    // fixed lines, so their signature needs nothing extra.
+    const presentKey = (substances: readonly Substance[], byField: ReadonlyMap<Substance, number>): string =>
+      substances.filter((substance) => (byField.get(substance) ?? 0) > 0).join(',');
+    const pageKeys: Partial<Record<number, string>> = {
+      0: presentKey(PHYSICAL_SUBSTANCES, counts.bySubstance),
+      1: presentKey(ALL_SUBSTANCES, counts.byConsume),
+      2: presentKey(PHYSICAL_SUBSTANCES, counts.byProduce),
+      3: presentKey(PHYSICAL_SUBSTANCES, counts.byToxin),
+    };
+    const pageKey = pageKeys[this.pageIndex] ?? '';
     const signature = `${this.pageIndex}|${this.selectedWindow}|${samples.length}|${latestTick}|${pageKey}`;
     if (signature === this.lastChartSignature) return;
     this.lastChartSignature = signature;
@@ -238,39 +256,64 @@ export class StatsDrawer {
 
     switch (this.pageIndex) {
       case 0:
-        this.renderPopulationChart(samples, counts);
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.bySubstance, (s) => s.bySubstance, true);
         break;
       case 1:
-        this.renderAveragesChart(samples);
+        this.renderSubstanceBreakdownChart(samples, ALL_SUBSTANCES, counts.byConsume, (s) => s.byConsume, false);
         break;
       case 2:
-        this.renderBirthsDeathsChart(samples);
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byProduce, (s) => s.byProduce, false);
         break;
       case 3:
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byToxin, (s) => s.byToxin, false);
+        break;
+      case 4:
         this.renderCompositionChart(samples);
+        break;
+      case 5:
+        this.renderAveragesChart(samples);
+        break;
+      case 6:
+        this.renderBirthsDeathsChart(samples);
         break;
     }
   }
 
-  private renderPopulationChart(samples: StatsSample[], counts: StatCounts): void {
-    const presentSubstances = PHYSICAL_SUBSTANCES.filter((substance) => (counts.bySubstance.get(substance) ?? 0) > 0);
+  /**
+   * Shared renderer for the four per-substance-breakdown pages (Population, Consume,
+   * Produce, Toxin): one line per substance currently present (plus, on Population only,
+   * a total line — on Consume/Produce/Toxin it would just retrace Population's total, so
+   * `showTotal` is false there), all autoscaled to the window's max total. `substances` is
+   * the field's full domain (Consume includes Sun; the others never do); `pick` reads that
+   * field's tally off a sample.
+   */
+  private renderSubstanceBreakdownChart(
+    samples: StatsSample[],
+    substances: readonly Substance[],
+    currentCounts: ReadonlyMap<Substance, number>,
+    pick: (sample: StatsSample) => ReadonlyMap<Substance, number>,
+    showTotal: boolean,
+  ): void {
+    const presentSubstances = substances.filter((substance) => (currentCounts.get(substance) ?? 0) > 0);
     const maxTotal = samples.reduce((max, sample) => Math.max(max, sample.total), 0);
 
-    this.chartEl.appendChild(
-      this.polyline(
-        scaleLinePoints(
-          samples.map((s) => s.total),
-          CHART_WIDTH,
-          CHART_HEIGHT,
-          CHART_MARGIN,
-          maxTotal,
+    if (showTotal) {
+      this.chartEl.appendChild(
+        this.polyline(
+          scaleLinePoints(
+            samples.map((s) => s.total),
+            CHART_WIDTH,
+            CHART_HEIGHT,
+            CHART_MARGIN,
+            maxTotal,
+          ),
+          TOTAL_LINE_COLOR,
+          2.5,
         ),
-        TOTAL_LINE_COLOR,
-        2.5,
-      ),
-    );
+      );
+    }
     for (const substance of presentSubstances) {
-      const values = samples.map((s) => s.bySubstance.get(substance) ?? 0);
+      const values = samples.map((s) => pick(s).get(substance) ?? 0);
       this.chartEl.appendChild(
         this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxTotal), SUBSTANCE_COLORS[substance], 1.75),
       );
