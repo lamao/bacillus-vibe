@@ -307,20 +307,25 @@ const resizeCanvas = (): void => {
 new ResizeObserver(resizeCanvas).observe(canvasWrap);
 resizeCanvas();
 
-pauseBtn.addEventListener('click', () => {
+const togglePause = (): void => {
   paused = !paused;
   pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  pauseBtn.title = paused ? 'Resume the simulation (Space)' : 'Pause the simulation (Space)';
   ticBtn.classList.toggle('hidden', !paused);
   postToWorker({ type: 'setPaused', paused });
-});
+};
+pauseBtn.addEventListener('click', togglePause);
 
-ticBtn.addEventListener('click', () => {
+const stepOnce = (): void => {
+  if (!paused) return;
   postToWorker({ type: 'stepOnce' });
-});
+};
+ticBtn.addEventListener('click', stepOnce);
 
-addBtn.addEventListener('click', () => {
+const addCreature = (): void => {
   postToWorker({ type: 'spawnRandomOrganic' });
-});
+};
+addBtn.addEventListener('click', addCreature);
 
 /** Toggles the static instruction-icon legend popup; its content is built once at startup, not per-render. */
 const closeLegend = (): void => {
@@ -329,6 +334,11 @@ const closeLegend = (): void => {
 
 const openLegend = (): void => {
   iconLegendEl.classList.remove('hidden');
+};
+
+const toggleLegend = (): void => {
+  if (iconLegendEl.classList.contains('hidden')) openLegend();
+  else closeLegend();
 };
 
 iconLegendCloseBtn.addEventListener('click', closeLegend);
@@ -340,6 +350,7 @@ const exitInspectMode = (): void => {
   inspectMode = false;
   inspectBtn.setAttribute('aria-pressed', 'false');
   inspectBtn.textContent = 'Inspect';
+  inspectBtn.title = 'Inspect cells on the grid (I)';
   canvas.classList.remove('inspecting');
   hintEl.textContent = 'Tap the grid to add a creature';
   inspectedTarget = null;
@@ -347,7 +358,7 @@ const exitInspectMode = (): void => {
   closeLegend();
 };
 
-inspectBtn.addEventListener('click', () => {
+const toggleInspectMode = (): void => {
   if (inspectMode) {
     exitInspectMode();
     return;
@@ -355,9 +366,11 @@ inspectBtn.addEventListener('click', () => {
   inspectMode = true;
   inspectBtn.setAttribute('aria-pressed', 'true');
   inspectBtn.textContent = 'Inspecting…';
+  inspectBtn.title = 'Exit inspect mode (I)';
   canvas.classList.add('inspecting');
   hintEl.textContent = 'Tap a cell to inspect it';
-});
+};
+inspectBtn.addEventListener('click', toggleInspectMode);
 
 inspectorCloseBtn.addEventListener('click', exitInspectMode);
 
@@ -373,6 +386,14 @@ speedInput.addEventListener('input', () => {
 });
 speedLabel.textContent = formatTickRate(ticksPerSecond);
 
+/** Nudges the speed slider by delta presets (e.g. from the -/= keyboard shortcuts), reusing its own 'input' handling. */
+const bumpSpeed = (delta: number): void => {
+  const nextIndex = Math.max(0, Math.min(TICK_RATE_PRESETS.length - 1, Number(speedInput.value) + delta));
+  if (nextIndex === Number(speedInput.value)) return;
+  speedInput.value = String(nextIndex);
+  speedInput.dispatchEvent(new Event('input'));
+};
+
 canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   if (!latestSnapshot) return;
   const cell = renderer.cellFromClientPoint(event.clientX, event.clientY, latestSnapshot);
@@ -383,6 +404,74 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
     selectedStateIndex = null;
   } else {
     postToWorker({ type: 'spawnOrganicAt', position: cell });
+  }
+});
+
+/**
+ * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a modifier
+ * key is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a
+ * form control (there's currently only the speed slider, but this guards against future
+ * text inputs too). Esc closes whichever overlay is topmost: the legend modal first, then
+ * (since exiting inspect mode already hides the inspector panel) inspect mode itself.
+ */
+window.addEventListener('keydown', (event: KeyboardEvent) => {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+  // Keyed on event.code (the physical key's position) rather than event.key (the character
+  // it produces) so shortcuts stay on the same physical keys regardless of active keyboard
+  // layout — e.g. the S key still steps once when the user has switched to a Ukrainian
+  // layout, even though that layout's event.key for that position is 'і'/'І', not 's'/'S'.
+  switch (event.code) {
+    case 'Space':
+      event.preventDefault();
+      togglePause();
+      break;
+    case 'KeyS':
+      event.preventDefault();
+      stepOnce();
+      break;
+    case 'KeyA':
+      event.preventDefault();
+      addCreature();
+      break;
+    case 'KeyI':
+      event.preventDefault();
+      toggleInspectMode();
+      break;
+    case 'Equal':
+      event.preventDefault();
+      bumpSpeed(1);
+      break;
+    case 'Minus':
+      event.preventDefault();
+      bumpSpeed(-1);
+      break;
+    case 'KeyH':
+      event.preventDefault();
+      toggleLegend();
+      break;
+    case 'KeyD':
+      event.preventDefault();
+      statsDrawer.toggleExpanded();
+      break;
+    case 'BracketLeft':
+      event.preventDefault();
+      if (statsDrawer.isExpanded()) statsDrawer.paginate(-1);
+      break;
+    case 'BracketRight':
+      event.preventDefault();
+      if (statsDrawer.isExpanded()) statsDrawer.paginate(1);
+      break;
+    case 'Escape':
+      event.preventDefault();
+      if (!iconLegendEl.classList.contains('hidden')) {
+        closeLegend();
+      } else if (inspectMode) {
+        exitInspectMode();
+      }
+      break;
   }
 });
 
@@ -551,6 +640,7 @@ function buildMatrixSection(entity: Organic): HTMLElement {
   legendToggle.className = 'legend-toggle';
   legendToggle.textContent = '?';
   legendToggle.setAttribute('aria-label', 'Show instruction icon legend');
+  legendToggle.title = 'Show instruction icon legend (H)';
   legendToggle.addEventListener('click', openLegend);
   header.append(label, legendToggle);
   section.appendChild(header);
