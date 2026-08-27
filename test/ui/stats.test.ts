@@ -5,7 +5,14 @@ import { dna, mineral, organic } from '../engine/fixtures';
 
 describe('computeStatCounts', () => {
   it('returns zeroed counts for an empty entity list', () => {
-    expect(computeStatCounts([])).toEqual({ total: 0, minerals: 0, bySubstance: new Map() });
+    expect(computeStatCounts([])).toEqual({
+      total: 0,
+      minerals: 0,
+      bySubstance: new Map(),
+      byConsume: new Map(),
+      byProduce: new Map(),
+      byToxin: new Map(),
+    });
   });
 
   it('counts organics, minerals, and per-body-substance breakdown separately', () => {
@@ -23,6 +30,33 @@ describe('computeStatCounts', () => {
       new Map([
         ['Blue', 2],
         ['Green', 1],
+      ]),
+    );
+  });
+
+  it('counts organics per consume/produce/toxin substance separately from body', () => {
+    const entities: Entity[] = [
+      organic({ x: 0, y: 0 }, { dna: dna({ body: 'Blue', consume: 'Sun', produce: 'Green', toxin: 'Red' }) }),
+      organic({ x: 1, y: 0 }, { dna: dna({ body: 'Green', consume: 'Sun', produce: 'Yellow', toxin: 'Red' }) }),
+      organic({ x: 2, y: 0 }, { dna: dna({ body: 'Yellow', consume: 'Green', produce: 'Yellow', toxin: 'White' }) }),
+    ];
+    const counts = computeStatCounts(entities);
+    expect(counts.byConsume).toEqual(
+      new Map([
+        ['Sun', 2],
+        ['Green', 1],
+      ]),
+    );
+    expect(counts.byProduce).toEqual(
+      new Map([
+        ['Green', 1],
+        ['Yellow', 2],
+      ]),
+    );
+    expect(counts.byToxin).toEqual(
+      new Map([
+        ['Red', 2],
+        ['White', 1],
       ]),
     );
   });

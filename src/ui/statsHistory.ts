@@ -15,6 +15,9 @@ export interface StatsSample {
   /** Mineral entity count (Composition tab, #41) — the organic-side count is `total`, the same series as the Population tab's total. */
   minerals: number;
   bySubstance: ReadonlyMap<Substance, number>;
+  byConsume: ReadonlyMap<Substance, number>;
+  byProduce: ReadonlyMap<Substance, number>;
+  byToxin: ReadonlyMap<Substance, number>;
   averages: AverageRatios;
   birthsDeaths: BirthsDeathsRate;
 }
@@ -39,12 +42,15 @@ export class StatsHistory {
     total: number,
     minerals: number,
     bySubstance: ReadonlyMap<Substance, number>,
+    byConsume: ReadonlyMap<Substance, number>,
+    byProduce: ReadonlyMap<Substance, number>,
+    byToxin: ReadonlyMap<Substance, number>,
     averages: AverageRatios,
     birthsDeaths: BirthsDeathsRate,
   ): void {
     const last = this.samples[this.samples.length - 1];
     if (last && last.tick === tick) return;
-    this.samples.push({ tick, total, minerals, bySubstance, averages, birthsDeaths });
+    this.samples.push({ tick, total, minerals, bySubstance, byConsume, byProduce, byToxin, averages, birthsDeaths });
     while (this.samples.length > 1 && tick - this.samples[0].tick > MAX_TIME_WINDOW) {
       this.samples.shift();
     }
