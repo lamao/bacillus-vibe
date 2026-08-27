@@ -36,22 +36,12 @@ const MAX_TIME_WINDOW = TIME_WINDOWS[TIME_WINDOWS.length - 1];
 export class StatsHistory {
   private samples: StatsSample[] = [];
 
-  /** Records a sample for `tick`, ignored if `tick` matches the most recently recorded one. */
-  record(
-    tick: number,
-    total: number,
-    minerals: number,
-    bySubstance: ReadonlyMap<Substance, number>,
-    byConsume: ReadonlyMap<Substance, number>,
-    byProduce: ReadonlyMap<Substance, number>,
-    byToxin: ReadonlyMap<Substance, number>,
-    averages: AverageRatios,
-    birthsDeaths: BirthsDeathsRate,
-  ): void {
+  /** Records `sample`, ignored if its tick matches the most recently recorded one. */
+  record(sample: StatsSample): void {
     const last = this.samples[this.samples.length - 1];
-    if (last && last.tick === tick) return;
-    this.samples.push({ tick, total, minerals, bySubstance, byConsume, byProduce, byToxin, averages, birthsDeaths });
-    while (this.samples.length > 1 && tick - this.samples[0].tick > MAX_TIME_WINDOW) {
+    if (last && last.tick === sample.tick) return;
+    this.samples.push(sample);
+    while (this.samples.length > 1 && sample.tick - this.samples[0].tick > MAX_TIME_WINDOW) {
       this.samples.shift();
     }
   }

@@ -127,7 +127,17 @@ export class StatsDrawer {
 
   /** Called once per animation frame with the latest population counts, averages, births/deaths rate, and tick. */
   update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, tick: number): void {
-    this.history.record(tick, counts.total, counts.minerals, counts.bySubstance, counts.byConsume, counts.byProduce, counts.byToxin, averages, birthsDeaths);
+    this.history.record({
+      tick,
+      total: counts.total,
+      minerals: counts.minerals,
+      bySubstance: counts.bySubstance,
+      byConsume: counts.byConsume,
+      byProduce: counts.byProduce,
+      byToxin: counts.byToxin,
+      averages,
+      birthsDeaths,
+    });
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
   }
