@@ -1,7 +1,9 @@
 import {
   Action,
   Entity,
+  GridView,
   INSTRUCTION_MATRIX_SIZE,
+  InstructionMatrix,
   MoveMode,
   Organic,
   PHYSICAL_SUBSTANCES,
@@ -15,8 +17,20 @@ import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
 import { computeTrend, Trend } from './ui/trend';
-import { RENDER_FPS, SimulationSnapshot, WorkerRequest, WorkerResponse } from './worker/protocol';
+import { RENDER_FPS, SnapshotMessage, WorkerRequest, WorkerResponse } from './worker/protocol';
 import './style.css';
+
+/**
+ * The main thread's full-DNA view of a worker snapshot, reconstructed by `reconstructSnapshot`
+ * from the wire-format `SnapshotMessage` (which omits `dna.behavior` for organics the worker
+ * already sent it for) plus `organicBehaviorCache`. Everything downstream of that
+ * reconstruction (rendering, stats, the inspector) works with this the same way it always has.
+ */
+interface SimulationSnapshot extends GridView {
+  tickCount: number;
+  totalBirths: number;
+  totalDeaths: number;
+}
 
 function formatAction(action: Action): string {
   switch (action.type) {
@@ -268,16 +282,51 @@ let organicById = new Map<number, Organic>();
 /** Settings never changes after the worker starts, so this is captured once from its one-off 'settings' message rather than resent with every snapshot. */
 let engineSettings: { maxAge: number; maxSize: number } | null = null;
 
+/**
+ * Per-organic-id cache of `dna.behavior`, the instruction matrix — the worker includes it on a
+ * `SnapshotMessage` entity only the first time that id appears (see `WireDNA`), so this fills
+ * in on every later snapshot. Pruned to the current snapshot's living organic ids each time
+ * (see `reconstructSnapshot`) so it doesn't grow across a whole session's cumulative births.
+ */
+const organicBehaviorCache = new Map<number, InstructionMatrix>();
+
+/** Rebuilds a full-DNA `SimulationSnapshot` from the wire-format `message`, filling in each organic's `dna.behavior` from (and updating) `organicBehaviorCache`. */
+function reconstructSnapshot(message: SnapshotMessage): SimulationSnapshot {
+  const aliveOrganicIds = new Set<number>();
+  const entities: Entity[] = message.entities.map((entity) => {
+    if (entity.kind === 'mineral') return entity;
+    aliveOrganicIds.add(entity.id);
+    if (entity.dna.behavior) {
+      organicBehaviorCache.set(entity.id, entity.dna.behavior);
+      return entity as Organic;
+    }
+    // The worker always includes `behavior` the first time an id appears, which necessarily
+    // precedes any snapshot where it's omitted, so this is always already cached.
+    return { ...entity, dna: { ...entity.dna, behavior: organicBehaviorCache.get(entity.id)! } };
+  });
+  for (const id of organicBehaviorCache.keys()) {
+    if (!aliveOrganicIds.has(id)) organicBehaviorCache.delete(id);
+  }
+  return {
+    tickCount: message.tickCount,
+    totalBirths: message.totalBirths,
+    totalDeaths: message.totalDeaths,
+    width: message.width,
+    height: message.height,
+    entities,
+  };
+}
+
 worker.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerResponse;
   if (message.type === 'settings') {
     engineSettings = { maxAge: message.maxAge, maxSize: message.maxSize };
     return;
   }
-  latestSnapshot = message;
-  entityByPosition = new Map(message.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
+  latestSnapshot = reconstructSnapshot(message);
+  entityByPosition = new Map(latestSnapshot.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
   organicById = new Map(
-    message.entities.filter((entity): entity is Organic => entity.kind === 'organic').map((entity) => [entity.id, entity]),
+    latestSnapshot.entities.filter((entity): entity is Organic => entity.kind === 'organic').map((entity) => [entity.id, entity]),
   );
 };
 
