@@ -1,7 +1,7 @@
 import { GridView, Position, Substance, substanceOf } from '../engine/types';
 
 export const SUBSTANCE_COLORS: Record<Substance, string> = {
-  Sun: '#fbbf24',
+  Sun: '#f97316',
   Blue: '#3b82f6',
   Green: '#22c55e',
   Yellow: '#eab308',

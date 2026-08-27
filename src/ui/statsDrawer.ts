@@ -30,12 +30,11 @@ const TOTAL_LINE_COLOR = '#e6e9f2';
 const AXIS_LABEL_COLOR = '#5b6376';
 
 /**
- * Titles of the drawer's paged-carousel tabs, in display order: Population (#38),
- * Composition (#41), then Consume/Produce/Toxin — grouped with Composition since all
- * four are per-substance breakdowns of the population — followed by Averages (#39) and
- * Births & deaths (#40).
+ * Titles of the drawer's paged-carousel tabs, in display order: Population (#38), then
+ * Consume/Produce/Toxin/Composition — all four per-substance breakdowns of the
+ * population, grouped together — followed by Averages (#39) and Births & deaths (#40).
  */
-const PAGE_TITLES = ['Population', 'Composition', 'Consume', 'Produce', 'Toxin', 'Averages', 'Births & deaths'] as const;
+const PAGE_TITLES = ['Population', 'Consume', 'Produce', 'Toxin', 'Composition', 'Averages', 'Births & deaths'] as const;
 
 /**
  * The Composition tab's two lines. Organic is the exact same series as the Population
@@ -239,9 +238,9 @@ export class StatsDrawer {
       substances.filter((substance) => (byField.get(substance) ?? 0) > 0).join(',');
     const pageKeys: Partial<Record<number, string>> = {
       0: presentKey(PHYSICAL_SUBSTANCES, counts.bySubstance),
-      2: presentKey(ALL_SUBSTANCES, counts.byConsume),
-      3: presentKey(PHYSICAL_SUBSTANCES, counts.byProduce),
-      4: presentKey(PHYSICAL_SUBSTANCES, counts.byToxin),
+      1: presentKey(ALL_SUBSTANCES, counts.byConsume),
+      2: presentKey(PHYSICAL_SUBSTANCES, counts.byProduce),
+      3: presentKey(PHYSICAL_SUBSTANCES, counts.byToxin),
     };
     const pageKey = pageKeys[this.pageIndex] ?? '';
     const signature = `${this.pageIndex}|${this.selectedWindow}|${samples.length}|${latestTick}|${pageKey}`;
@@ -261,16 +260,16 @@ export class StatsDrawer {
         this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.bySubstance, (s) => s.bySubstance, true);
         break;
       case 1:
-        this.renderCompositionChart(samples);
-        break;
-      case 2:
         this.renderSubstanceBreakdownChart(samples, ALL_SUBSTANCES, counts.byConsume, (s) => s.byConsume, false);
         break;
-      case 3:
+      case 2:
         this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byProduce, (s) => s.byProduce, false);
         break;
-      case 4:
+      case 3:
         this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byToxin, (s) => s.byToxin, false);
+        break;
+      case 4:
+        this.renderCompositionChart(samples);
         break;
       case 5:
         this.renderAveragesChart(samples);
