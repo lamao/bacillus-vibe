@@ -419,50 +419,48 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
   const target = event.target;
   if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
-  switch (event.key) {
-    case ' ':
+  // Keyed on event.code (the physical key's position) rather than event.key (the character
+  // it produces) so shortcuts stay on the same physical keys regardless of active keyboard
+  // layout — e.g. the S key still steps once when the user has switched to a Ukrainian
+  // layout, even though that layout's event.key for that position is 'і'/'І', not 's'/'S'.
+  switch (event.code) {
+    case 'Space':
       event.preventDefault();
       togglePause();
       break;
-    case 's':
-    case 'S':
+    case 'KeyS':
       event.preventDefault();
       stepOnce();
       break;
-    case 'a':
-    case 'A':
+    case 'KeyA':
       event.preventDefault();
       addCreature();
       break;
-    case 'i':
-    case 'I':
+    case 'KeyI':
       event.preventDefault();
       toggleInspectMode();
       break;
-    case '=':
-    case '+':
+    case 'Equal':
       event.preventDefault();
       bumpSpeed(1);
       break;
-    case '-':
+    case 'Minus':
       event.preventDefault();
       bumpSpeed(-1);
       break;
-    case 'h':
-    case 'H':
+    case 'KeyH':
       event.preventDefault();
       toggleLegend();
       break;
-    case 'd':
-    case 'D':
+    case 'KeyD':
       event.preventDefault();
       statsDrawer.toggleExpanded();
       break;
-    case '[':
+    case 'BracketLeft':
       event.preventDefault();
       if (statsDrawer.isExpanded()) statsDrawer.paginate(-1);
       break;
-    case ']':
+    case 'BracketRight':
       event.preventDefault();
       if (statsDrawer.isExpanded()) statsDrawer.paginate(1);
       break;
