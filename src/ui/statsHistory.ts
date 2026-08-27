@@ -39,7 +39,7 @@ export class StatsHistory {
   /** Records `sample`, ignored if its tick matches the most recently recorded one. */
   record(sample: StatsSample): void {
     const last = this.samples[this.samples.length - 1];
-    if (last && last.tick === sample.tick) return;
+    if (last?.tick === sample.tick) return;
     this.samples.push(sample);
     while (this.samples.length > 1 && sample.tick - this.samples[0].tick > MAX_TIME_WINDOW) {
       this.samples.shift();
