@@ -130,6 +130,21 @@ export class StatsDrawer {
     if (this.expanded) this.renderChart(counts);
   }
 
+  /** Whether the drawer is currently expanded, for callers (e.g. the chart-pagination shortcut) that should no-op while it's collapsed. */
+  isExpanded(): boolean {
+    return this.expanded;
+  }
+
+  /** Toggles the drawer open/closed, e.g. from the D keyboard shortcut. */
+  toggleExpanded(): void {
+    this.setExpanded(!this.expanded);
+  }
+
+  /** Moves the carousel by delta pages, e.g. from the [ / ] keyboard shortcuts. */
+  paginate(delta: number): void {
+    this.changePage(delta);
+  }
+
   private setExpanded(value: boolean): void {
     this.expanded = value;
     this.root.classList.toggle('expanded', value);

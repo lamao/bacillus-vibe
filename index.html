@@ -25,11 +25,18 @@
         <div id="canvas-wrap">
           <canvas id="grid-canvas"></canvas>
           <div id="inspector" class="inspector hidden" aria-live="polite">
-            <button id="inspector-close" type="button" class="inspector-close" aria-label="Close inspector">&times;</button>
+            <button id="inspector-close" type="button" class="inspector-close" aria-label="Close inspector" title="Close inspector (Esc)">&times;</button>
             <div id="inspector-content"></div>
           </div>
           <div id="stats-drawer" class="stats-drawer">
-            <button id="stats-bar" type="button" class="stats-bar" aria-expanded="false" aria-controls="stats-drawer-body">
+            <button
+              id="stats-bar"
+              type="button"
+              class="stats-bar"
+              aria-expanded="false"
+              aria-controls="stats-drawer-body"
+              title="Toggle stats drawer (D)"
+            >
               <span class="stats-total">
                 <span class="stats-label">Population</span>
                 <span id="stats-total-value">0</span>
@@ -40,12 +47,12 @@
             <div id="stats-drawer-body" class="stats-drawer-body hidden">
               <div class="stats-drawer-head">
                 <div class="stats-pager">
-                  <button id="stats-prev" type="button" class="stats-pager-btn" aria-label="Previous chart"></button>
+                  <button id="stats-prev" type="button" class="stats-pager-btn" aria-label="Previous chart" title="Previous chart ([)"></button>
                   <div class="stats-pager-mid">
                     <div id="stats-page-title" class="stats-page-title"></div>
                     <div id="stats-pager-dots" class="stats-pager-dots"></div>
                   </div>
-                  <button id="stats-next" type="button" class="stats-pager-btn" aria-label="Next chart"></button>
+                  <button id="stats-next" type="button" class="stats-pager-btn" aria-label="Next chart" title="Next chart (])"></button>
                 </div>
                 <div id="stats-chips" class="stats-chips"></div>
               </div>
@@ -56,7 +63,7 @@
           <div id="icon-legend" class="icon-legend hidden">
             <div id="icon-legend-backdrop" class="icon-legend-backdrop"></div>
             <div class="icon-legend-panel" role="dialog" aria-modal="true" aria-label="Instruction icon legend">
-              <button id="icon-legend-close" type="button" class="icon-legend-close" aria-label="Close legend">&times;</button>
+              <button id="icon-legend-close" type="button" class="icon-legend-close" aria-label="Close legend" title="Close legend (Esc)">&times;</button>
               <h2 class="icon-legend-title">Instruction icons</h2>
               <div id="icon-legend-content"></div>
             </div>
@@ -64,13 +71,13 @@
         </div>
       </main>
       <footer id="controls">
-        <button id="pause-btn" type="button">Pause</button>
-        <button id="tic-btn" type="button" class="hidden">Tic</button>
-        <button id="add-btn" type="button">Add creature</button>
-        <button id="inspect-btn" type="button" aria-pressed="false">Inspect</button>
+        <button id="pause-btn" type="button" title="Pause the simulation (Space)">Pause</button>
+        <button id="tic-btn" type="button" class="hidden" title="Advance one tick (S)">Tic</button>
+        <button id="add-btn" type="button" title="Add a random creature (A)">Add creature</button>
+        <button id="inspect-btn" type="button" aria-pressed="false" title="Inspect cells on the grid (I)">Inspect</button>
         <label class="speed-control">
           Speed
-          <input id="speed" type="range" min="0" max="11" step="1" value="6" />
+          <input id="speed" type="range" min="0" max="11" step="1" value="6" title="Change simulation speed (- / =)" />
           <span id="speed-value">60 ticks/s</span>
         </label>
         <span class="hint" id="hint">Tap the grid to add a creature</span>
