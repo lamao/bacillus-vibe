@@ -258,19 +258,19 @@ export class StatsDrawer {
 
     switch (this.pageIndex) {
       case 0:
-        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.bySubstance, (s) => s.bySubstance);
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.bySubstance, (s) => s.bySubstance, true);
         break;
       case 1:
         this.renderCompositionChart(samples);
         break;
       case 2:
-        this.renderSubstanceBreakdownChart(samples, ALL_SUBSTANCES, counts.byConsume, (s) => s.byConsume);
+        this.renderSubstanceBreakdownChart(samples, ALL_SUBSTANCES, counts.byConsume, (s) => s.byConsume, false);
         break;
       case 3:
-        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byProduce, (s) => s.byProduce);
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byProduce, (s) => s.byProduce, false);
         break;
       case 4:
-        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byToxin, (s) => s.byToxin);
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byToxin, (s) => s.byToxin, false);
         break;
       case 5:
         this.renderAveragesChart(samples);
@@ -283,32 +283,37 @@ export class StatsDrawer {
 
   /**
    * Shared renderer for the four per-substance-breakdown pages (Population, Consume,
-   * Produce, Toxin): a total line plus one line per substance currently present, all
-   * autoscaled to the window's max total. `substances` is the field's full domain (Consume
-   * includes Sun; the others never do); `pick` reads that field's tally off a sample.
+   * Produce, Toxin): one line per substance currently present (plus, on Population only,
+   * a total line — on Consume/Produce/Toxin it would just retrace Population's total, so
+   * `showTotal` is false there), all autoscaled to the window's max total. `substances` is
+   * the field's full domain (Consume includes Sun; the others never do); `pick` reads that
+   * field's tally off a sample.
    */
   private renderSubstanceBreakdownChart(
     samples: StatsSample[],
     substances: readonly Substance[],
     currentCounts: ReadonlyMap<Substance, number>,
     pick: (sample: StatsSample) => ReadonlyMap<Substance, number>,
+    showTotal: boolean,
   ): void {
     const presentSubstances = substances.filter((substance) => (currentCounts.get(substance) ?? 0) > 0);
     const maxTotal = samples.reduce((max, sample) => Math.max(max, sample.total), 0);
 
-    this.chartEl.appendChild(
-      this.polyline(
-        scaleLinePoints(
-          samples.map((s) => s.total),
-          CHART_WIDTH,
-          CHART_HEIGHT,
-          CHART_MARGIN,
-          maxTotal,
+    if (showTotal) {
+      this.chartEl.appendChild(
+        this.polyline(
+          scaleLinePoints(
+            samples.map((s) => s.total),
+            CHART_WIDTH,
+            CHART_HEIGHT,
+            CHART_MARGIN,
+            maxTotal,
+          ),
+          TOTAL_LINE_COLOR,
+          2.5,
         ),
-        TOTAL_LINE_COLOR,
-        2.5,
-      ),
-    );
+      );
+    }
     for (const substance of presentSubstances) {
       const values = samples.map((s) => pick(s).get(substance) ?? 0);
       this.chartEl.appendChild(
