@@ -12,9 +12,6 @@ jobs:
   test:
     name: Typecheck, test, coverage, Sonar
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write # only used by the Sonar PR-comment step below
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -40,7 +37,6 @@ jobs:
         run: npm run build
 
       - name: SonarQube Cloud Scan
-        id: sonar-scan
         uses: sonarsource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -51,68 +47,10 @@ jobs:
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
 
       - name: SonarQube Quality Gate
-        id: sonar-quality-gate
-        continue-on-error: true # let the PR-comment step below run before we fail the job on a bad gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # Sonar's own dashboard/API live at sonarcloud.io, which is unreachable from a
-      # Claude Code web session's network egress proxy (see issue #43) - so surface the
-      # numbers that matter directly in the PR instead of requiring a human to relay
-      # a screenshot. Runs from the GitHub Actions runner, which has normal internet
-      # access (only the Claude session's own proxy blocks sonarcloud.io).
-      - name: Post Sonar summary to PR
-        id: sonar-pr-comment
-        if: github.event_name == 'pull_request' && steps.sonar-scan.outcome == 'success'
-        continue-on-error: true # a comment-posting hiccup shouldn't fail the build; the gate check below still does
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-          GATE_STATUS: ${{ steps.sonar-quality-gate.outputs.quality-gate-status }}
-          PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          measures=$(curl -sf -u "${SONAR_TOKEN}:" \
-            "https://sonarcloud.io/api/measures/component?component=${PROJECT_KEY}&pullRequest=${PR_NUMBER}&metricKeys=new_coverage,new_violations")
-
-          coverage=$(jq -r '(.component.measures[]? | select(.metric=="new_coverage") | .period.value) // "N/A"' <<<"$measures")
-          new_issues=$(jq -r '(.component.measures[]? | select(.metric=="new_violations") | .period.value) // "N/A"' <<<"$measures")
-          if [ "$coverage" != "N/A" ]; then
-            coverage="${coverage}%"
-          fi
-
-          case "$GATE_STATUS" in
-            PASSED) emoji="✅" ;;
-            WARN) emoji="⚠️" ;;
-            FAILED) emoji="❌" ;;
-            *) emoji="❔"; GATE_STATUS="UNKNOWN" ;;
-          esac
-
-          dashboard_url="https://sonarcloud.io/dashboard?id=${PROJECT_KEY}&pullRequest=${PR_NUMBER}"
-          marker="<!-- sonar-pr-summary -->"
-
-          body=$(printf '%s\n### %s SonarQube Cloud analysis\n\n| Quality Gate | New issues | Coverage on new code |\n| --- | --- | --- |\n| **%s** | %s | %s |\n\n[View full analysis on SonarCloud](%s)' \
-            "$marker" "$emoji" "$GATE_STATUS" "$new_issues" "$coverage" "$dashboard_url")
-
-          comment_id=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
-            --jq "[.[] | select(.body | startswith(\"${marker}\"))][0].id // empty")
-
-          if [ -n "$comment_id" ]; then
-            gh api "repos/${REPO}/issues/comments/${comment_id}" -X PATCH -f body="$body"
-          else
-            gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" -X POST -f body="$body"
-          fi
-
-      - name: Fail if Sonar quality gate did not pass
-        if: steps.sonar-quality-gate.outcome == 'failure'
-        run: |
-          echo "Sonar Quality Gate did not pass (status: ${{ steps.sonar-quality-gate.outputs.quality-gate-status }})" >&2
-          exit 1
 
   dependency-review:
     name: Dependency review
