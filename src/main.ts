@@ -172,6 +172,38 @@ const ICON_DEFS_SVG = `
       <rect x="6.5" y="10.5" width="11" height="9" rx="1.6" />
       <path d="M9 10.5 V7.8 A3 3 0 0 1 15 7.8 V10.5" />
     </symbol>
+    <symbol id="ic-pause" viewBox="0 0 24 24">
+      <path d="M8.5 5.5 V18.5 M15.5 5.5 V18.5" />
+    </symbol>
+    <symbol id="ic-play" viewBox="0 0 24 24">
+      <path d="M7 4.5 L19 12 L7 19.5 Z" />
+    </symbol>
+    <symbol id="ic-step" viewBox="0 0 24 24">
+      <path d="M6 4.5 L16 12 L6 19.5 Z" />
+      <path d="M18 4.5 V19.5" />
+    </symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24">
+      <path d="M12 5 V19 M5 12 H19" />
+    </symbol>
+    <symbol id="ic-eye" viewBox="0 0 24 24">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </symbol>
+    <symbol id="ic-speed" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 12 L16 8" />
+      <path d="M12 4 V5.5 M20 12 H18.5 M4 12 H5.5" />
+    </symbol>
+    <symbol id="ic-menu" viewBox="0 0 24 24">
+      <path d="M4 6 H20 M4 12 H20 M4 18 H14" />
+    </symbol>
+    <symbol id="ic-drawer" viewBox="0 0 24 24">
+      <path d="M3 10 H21 M3 10 V19 A1 1 0 0 0 4 20 H20 A1 1 0 0 0 21 19 V10 M3 10 L5.5 5 H18.5 L21 10" />
+    </symbol>
+    <symbol id="ic-help" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8 V8.01 M11 12 H12 V17 H13" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -207,6 +239,7 @@ function formatTickRate(ticksPerSecond: number): string {
 
 const canvas = document.querySelector<HTMLCanvasElement>('#grid-canvas');
 const pauseBtn = document.querySelector<HTMLButtonElement>('#pause-btn');
+const pauseIconUse = document.querySelector<SVGUseElement>('#pause-icon-use');
 const ticBtn = document.querySelector<HTMLButtonElement>('#tic-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
@@ -224,10 +257,15 @@ const iconLegendEl = document.querySelector<HTMLElement>('#icon-legend');
 const iconLegendBackdropEl = document.querySelector<HTMLElement>('#icon-legend-backdrop');
 const iconLegendCloseBtn = document.querySelector<HTMLButtonElement>('#icon-legend-close');
 const iconLegendContentEl = document.querySelector<HTMLElement>('#icon-legend-content');
+const controlsMenuBtn = document.querySelector<HTMLButtonElement>('#controls-menu-btn');
+const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
+const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
+const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
 
 if (
   !canvas ||
   !pauseBtn ||
+  !pauseIconUse ||
   !ticBtn ||
   !addBtn ||
   !inspectBtn ||
@@ -244,7 +282,11 @@ if (
   !iconLegendEl ||
   !iconLegendBackdropEl ||
   !iconLegendCloseBtn ||
-  !iconLegendContentEl
+  !iconLegendContentEl ||
+  !controlsMenuBtn ||
+  !controlsMenuEl ||
+  !menuDrawerToggle ||
+  !menuLegendToggle
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
@@ -310,7 +352,7 @@ resizeCanvas();
 
 const togglePause = (): void => {
   paused = !paused;
-  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  pauseIconUse.setAttribute('href', paused ? '#ic-play' : '#ic-pause');
   pauseBtn.title = paused ? 'Resume the simulation (Space)' : 'Pause the simulation (Space)';
   ticBtn.classList.toggle('hidden', !paused);
   postToWorker({ type: 'setPaused', paused });
@@ -346,11 +388,65 @@ iconLegendCloseBtn.addEventListener('click', closeLegend);
 iconLegendBackdropEl.addEventListener('click', closeLegend);
 iconLegendContentEl.replaceChildren(buildLegendContent());
 
+/**
+ * Grouped popover (#71) anchored above the footer's Controls button, holding the view
+ * toggles and the full shortcut list — everything that used to be hotkey-only with no
+ * visible affordance. Reflects the stats drawer's/legend's actual state (rather than
+ * tracking its own) so it stays correct even when either was toggled by its own hotkey
+ * or, for the drawer, by clicking its bar directly.
+ */
+const closeControlsMenu = (): void => {
+  controlsMenuEl.classList.add('hidden');
+  controlsMenuBtn.setAttribute('aria-expanded', 'false');
+};
+
+const syncControlsMenu = (): void => {
+  menuDrawerToggle.setAttribute('aria-checked', String(statsDrawer.isExpanded()));
+  menuLegendToggle.setAttribute('aria-checked', String(!iconLegendEl.classList.contains('hidden')));
+};
+
+const openControlsMenu = (): void => {
+  syncControlsMenu();
+  controlsMenuEl.classList.remove('hidden');
+  controlsMenuBtn.setAttribute('aria-expanded', 'true');
+};
+
+const toggleControlsMenu = (): void => {
+  if (controlsMenuEl.classList.contains('hidden')) openControlsMenu();
+  else closeControlsMenu();
+};
+
+controlsMenuBtn.addEventListener('click', (event) => {
+  // Stops this click from also reaching the document-level listener below, which would
+  // immediately close the menu this same click just opened.
+  event.stopPropagation();
+  toggleControlsMenu();
+});
+
+menuDrawerToggle.addEventListener('click', () => {
+  statsDrawer.toggleExpanded();
+  syncControlsMenu();
+});
+
+menuLegendToggle.addEventListener('click', () => {
+  toggleLegend();
+  syncControlsMenu();
+});
+
+// Closes the popover on any click outside it, same as a native dropdown menu — it never
+// blocks interaction with the grid underneath (no backdrop), so a tap that both dismisses
+// the menu and hits something else on the page (e.g. adds a creature) is expected.
+document.addEventListener('click', (event) => {
+  if (controlsMenuEl.classList.contains('hidden')) return;
+  const target = event.target;
+  if (target instanceof Node && (controlsMenuEl.contains(target) || controlsMenuBtn.contains(target))) return;
+  closeControlsMenu();
+});
+
 /** Turns off inspect mode and hides the inspector, however it was entered. */
 const exitInspectMode = (): void => {
   inspectMode = false;
   inspectBtn.setAttribute('aria-pressed', 'false');
-  inspectBtn.textContent = 'Inspect';
   inspectBtn.title = 'Inspect cells on the grid (I)';
   canvas.classList.remove('inspecting');
   hintEl.textContent = 'Tap the grid to add a creature';
@@ -366,7 +462,6 @@ const toggleInspectMode = (): void => {
   }
   inspectMode = true;
   inspectBtn.setAttribute('aria-pressed', 'true');
-  inspectBtn.textContent = 'Inspecting…';
   inspectBtn.title = 'Exit inspect mode (I)';
   canvas.classList.add('inspecting');
   hintEl.textContent = 'Tap a cell to inspect it';
@@ -452,10 +547,12 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     case 'KeyH':
       event.preventDefault();
       toggleLegend();
+      syncControlsMenu();
       break;
     case 'KeyD':
       event.preventDefault();
       statsDrawer.toggleExpanded();
+      syncControlsMenu();
       break;
     case 'BracketLeft':
       event.preventDefault();
@@ -467,7 +564,9 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'Escape':
       event.preventDefault();
-      if (!iconLegendEl.classList.contains('hidden')) {
+      if (!controlsMenuEl.classList.contains('hidden')) {
+        closeControlsMenu();
+      } else if (!iconLegendEl.classList.contains('hidden')) {
         closeLegend();
       } else if (inspectMode) {
         exitInspectMode();

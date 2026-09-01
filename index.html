@@ -71,16 +71,65 @@
         </div>
       </main>
       <footer id="controls">
-        <button id="pause-btn" type="button" title="Pause the simulation (Space)">Pause</button>
-        <button id="tic-btn" type="button" class="hidden" title="Advance one tick (S)">Tic</button>
-        <button id="add-btn" type="button" title="Add a random creature (A)">Add creature</button>
-        <button id="inspect-btn" type="button" aria-pressed="false" title="Inspect cells on the grid (I)">Inspect</button>
-        <label class="speed-control">
-          Speed
-          <input id="speed" type="range" min="0" max="11" step="1" value="6" title="Change simulation speed (- / =)" />
+        <button id="pause-btn" type="button" class="icon-btn" title="Pause the simulation (Space)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="pause-icon-use" href="#ic-pause"></use></svg>
+        </button>
+        <button id="tic-btn" type="button" class="icon-btn hidden" title="Step one tick (S)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-step"></use></svg>
+        </button>
+        <button id="add-btn" type="button" class="icon-btn" title="Add a random creature (A)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-plus"></use></svg>
+        </button>
+        <button id="inspect-btn" type="button" class="icon-btn" aria-pressed="false" title="Inspect cells on the grid (I)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"></use></svg>
+        </button>
+        <label class="speed-control" title="Change simulation speed (- / =)">
+          <svg class="btn-icon speed-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-speed"></use></svg>
+          <input id="speed" type="range" min="0" max="11" step="1" value="6" aria-label="Simulation speed" />
           <span id="speed-value">60 ticks/s</span>
         </label>
         <span class="hint" id="hint">Tap the grid to add a creature</span>
+        <button
+          id="controls-menu-btn"
+          type="button"
+          class="icon-btn"
+          aria-haspopup="true"
+          aria-expanded="false"
+          aria-controls="controls-menu"
+          title="More controls"
+        >
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-menu"></use></svg>
+        </button>
+        <div id="controls-menu" class="controls-menu hidden" role="menu">
+          <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #22c55e"></span>View</div>
+            <button type="button" class="controls-menu-row" id="menu-drawer-toggle" role="menuitemcheckbox" aria-checked="false">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-drawer"></use></svg>
+              <span class="label">Stats drawer</span>
+              <kbd>D</kbd>
+              <span class="controls-menu-switch" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="controls-menu-row" id="menu-legend-toggle" role="menuitemcheckbox" aria-checked="false">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-help"></use></svg>
+              <span class="label">Icon legend</span>
+              <kbd>H</kbd>
+              <span class="controls-menu-switch" aria-hidden="true"></span>
+            </button>
+          </div>
+          <hr class="controls-menu-divider" />
+          <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #a855f7"></span>Help</div>
+            <div class="shortcut-table">
+              <kbd>Space</kbd><span>Pause / resume</span>
+              <kbd>S</kbd><span>Step one tick (while paused)</span>
+              <kbd>A</kbd><span>Add creature</span>
+              <kbd>I</kbd><span>Inspect mode</span>
+              <kbd>&minus; / =</kbd><span>Simulation speed</span>
+              <kbd>[&nbsp;&nbsp;]</kbd><span>Paginate stats pages</span>
+              <kbd>Esc</kbd><span>Close topmost overlay</span>
+            </div>
+          </div>
+        </div>
       </footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
