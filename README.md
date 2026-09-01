@@ -167,9 +167,11 @@ surface is the CI pipeline itself:
 - Every third-party GitHub Action is pinned to a full commit SHA, not a
   floating tag.
 - Each workflow defaults to `permissions: contents: read`; `pages:write`
-  / `id-token:write` is added only on the Pages deploy job, and
+  / `id-token:write` is added only on the Pages deploy job,
   `contents:write` / `pull-requests:write` only on the PR-preview job
-  (which needs to push to `gh-pages` and post/update a comment).
+  (which needs to push to `gh-pages` and post/update a comment), and
+  `pull-requests:write` on the CI `test` job (which posts/updates the
+  Sonar summary comment described below).
 - No job uses `pull_request_target` — PR builds run under plain
   `pull_request`, which withholds write-scoped secrets from fork PRs by
   default.
@@ -213,6 +215,21 @@ expected out of the box.
 
 These aren't committed because they're specific to whoever's SonarCloud
 account owns the analysis.
+
+`sonarcloud.io` itself is unreachable from a Claude Code web session's
+network egress proxy (confirmed via both `curl` and `WebFetch` — hard
+403/`EGRESS_BLOCKED`), so a Claude session can't check quality gate or
+issue details by querying the dashboard or REST API directly. To make that
+visible without a human relaying a screenshot (see issue #43), the CI
+`test` job posts/updates a single PR comment after the Sonar scan with the
+quality gate result, new-issue count, and coverage-on-new-code percentage,
+pulled from SonarCloud's `measures` API using the same `SONAR_TOKEN`. This
+step runs from the GitHub Actions runner, which has normal internet
+access — only the Claude session's own proxy blocks `sonarcloud.io`. Like
+the Sonar scan itself, it only runs for PRs from branches in this repo,
+not forks (`SONAR_TOKEN` isn't available to fork PRs under plain
+`pull_request`), and a failure to post the comment doesn't fail the build
+— the quality gate check further down still does.
 
 ## Deployment
 
