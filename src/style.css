@@ -140,9 +140,10 @@ main {
 }
 
 footer#controls {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.6rem;
   padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
   background: var(--panel);
   border-top: 1px solid var(--border);
@@ -171,6 +172,67 @@ button:active {
 button[aria-pressed='true'] {
   background: var(--text);
   color: var(--bg);
+}
+
+/* Every footer action is icon-only (#71) — its name lives in its title tooltip
+   instead of on-screen text, so the footer stays compact on small screens. */
+.btn-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+footer#controls .icon-btn {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+footer#controls .speed-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  /* Wide enough that the range input below always keeps a usable, visible track —
+     the icon and value text next to it don't shrink, so on a cramped row (e.g. the
+     Step button appearing once paused) it's this floor, not the input, that forces
+     the footer to wrap (footer#controls is already flex-wrap: wrap) rather than
+     squeezing the slider down to an unusable sliver. */
+  min-width: 140px;
+  max-width: 220px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+footer#controls .speed-control .btn-icon {
+  flex: none;
+  stroke: var(--muted);
+}
+
+footer#controls .speed-control input[type='range'] {
+  flex: 1;
+  min-width: 36px;
+}
+
+footer#controls #speed-value {
+  flex: none;
+  min-width: 4.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+footer#controls .hint,
+footer#controls #controls-menu-btn {
+  margin-left: auto;
 }
 
 .inspector {
@@ -393,18 +455,6 @@ button[aria-pressed='true'] {
   margin: 0;
   color: var(--muted);
   pointer-events: none;
-}
-
-.speed-control {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.speed-control input[type='range'] {
-  width: 120px;
 }
 
 .hint {
@@ -775,6 +825,147 @@ button[aria-pressed='true'] {
 .legend-copy .desc {
   font-size: 0.68rem;
   color: var(--muted);
+}
+
+/* Grouped popover (#71) anchored above the footer's Controls button, holding
+   everything that was previously hotkey-only with no visible affordance. */
+.controls-menu {
+  position: absolute;
+  right: 1rem;
+  bottom: calc(100% + 0.5rem);
+  width: min(280px, calc(100% - 2rem));
+  /* Percentages here would resolve against the footer itself (this popover's
+     positioned ancestor) — only ~60px tall — so the cap is viewport-relative
+     instead, leaving room for the header and footer above/below it. */
+  max-height: min(360px, calc(100dvh - 160px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  background: rgba(16, 24, 43, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55);
+}
+
+.controls-menu.hidden {
+  display: none;
+}
+
+.controls-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.controls-menu-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.15rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.controls-menu-group-title .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.controls-menu-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.controls-menu-row:hover {
+  background: rgba(230, 233, 242, 0.06);
+}
+
+.controls-menu-row .btn-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.controls-menu-row .label {
+  flex: 1;
+  min-width: 0;
+}
+
+.controls-menu-row kbd {
+  flex: none;
+}
+
+.controls-menu-switch {
+  flex: none;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+}
+
+.controls-menu-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.15s ease;
+}
+
+.controls-menu-row[aria-checked='true'] .controls-menu-switch {
+  background: var(--accent);
+}
+
+.controls-menu-row[aria-checked='true'] .controls-menu-switch::after {
+  transform: translateX(13px);
+}
+
+.controls-menu-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+.shortcut-table {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.7rem;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.shortcut-table span {
+  color: var(--muted);
+}
+
+kbd {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  color: var(--muted);
+  background: rgba(230, 233, 242, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.12rem 0.35rem;
 }
 
 @media (max-width: 480px) {
