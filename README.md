@@ -214,6 +214,26 @@ expected out of the box.
 These aren't committed because they're specific to whoever's SonarCloud
 account owns the analysis.
 
+SonarCloud's GitHub App (`sonarqubecloud[bot]`) already posts/updates its
+own PR comment with quality gate status, new-issue count, and
+coverage-on-new-code — no extra CI step needed for that. **"0.0% Coverage
+on New Code" on a PR is expected, not a bug**, whenever the PR's diff only
+touches files under `sonar.coverage.exclusions` above (`src/ui/**`,
+`src/worker/**`, `src/main.ts`) or non-code files (workflows, docs): there
+is no coverable new code in the diff, so the metric is trivially 0/0.
+Confirmed against actual PR history: a UI-only PR (#42) and a
+workflow/docs-only PR both show 0.0%, while an engine-only PR (#64) shows
+90.3% — same pipeline, different diffs.
+
+`sonarcloud.io` itself is unreachable from a Claude Code web session's own
+network egress proxy (confirmed via both `curl` and `WebFetch` — hard
+403/`EGRESS_BLOCKED`), so a Claude session still can't query the dashboard
+or REST API directly to check findings itself; a human relaying what's in
+the `sonarqubecloud[bot]` PR comment (or a screenshot for anything it
+doesn't cover) remains the workaround unless `sonarcloud.io` is added to
+the session's egress allowlist — a session/environment setting, not
+something this repo's code or CI config can change.
+
 ## Deployment
 
 Both flows below publish to the same `gh-pages` branch — GitHub Pages
