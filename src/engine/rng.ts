@@ -25,11 +25,17 @@ export class SeededRNG implements RNG {
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
       return crypto.getRandomValues(new Uint32Array(1))[0];
     }
-    return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    // Fallback only when Web Crypto is unavailable (every actual runtime here —
+    // browser, Worker, Node 19+ — has it); seeds a simulation's display-only PRNG,
+    // not a cryptographic or otherwise security-sensitive value.
+    return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0; // NOSONAR
   }
 
   next(): number {
-    this.state = (this.state + 0x6d2b79f5) | 0;
+    // `| 0` performs 32-bit signed-integer wraparound (mulberry32's reference
+    // algorithm), not float truncation — Math.trunc wouldn't wrap on overflow
+    // and would silently change the generator's output.
+    this.state = (this.state + 0x6d2b79f5) | 0; // NOSONAR
     let t = this.state;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
