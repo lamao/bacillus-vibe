@@ -10,7 +10,7 @@ import {
   produceWaste,
   reproduce,
 } from './phases';
-import { DefaultRNG, RNG } from './rng';
+import { RNG, SeededRNG } from './rng';
 import { Settings, defaultSettings } from './settings';
 import { DNA, Organic, Position } from './types';
 
@@ -42,7 +42,7 @@ export class Simulation {
   totalBirths = 0;
   totalDeaths = 0;
 
-  constructor(settings: Settings = defaultSettings(), rng: RNG = new DefaultRNG()) {
+  constructor(settings: Settings = defaultSettings(), rng: RNG = new SeededRNG()) {
     this.settings = settings;
     this.grid = new Grid(settings.width, settings.height);
     this.rng = rng;
