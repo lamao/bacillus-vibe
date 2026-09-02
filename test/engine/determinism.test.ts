@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../../src/engine/settings';
 import { Simulation } from '../../src/engine/simulation';
-import { SeededRNG } from './seededRng';
+import { SeededRNG } from '../../src/engine/rng';
 
 /**
  * Runs a fresh population through `tickCount` ticks and returns a plain-object

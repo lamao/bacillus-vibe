@@ -1,4 +1,4 @@
-import { DefaultRNG } from '../engine/rng';
+import { SeededRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
 import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot, WorkerSettings } from './protocol';
@@ -39,7 +39,7 @@ const SNAPSHOT_INTERVAL_MS = 1000 / WORKER_LOOP_FPS;
 const TICK_BUDGET_MS = SNAPSHOT_INTERVAL_MS / 2;
 
 const settings = defaultSettings();
-const simulation = new Simulation(settings, new DefaultRNG());
+const simulation = new Simulation(settings, new SeededRNG());
 for (let i = 0; i < INITIAL_POPULATION; i++) {
   simulation.spawnRandomOrganic();
 }
