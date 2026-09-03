@@ -36,18 +36,31 @@ export function parseSnapshot(json: string): SimulationState | null {
   }
 }
 
-export function saveToLocalStorage(state: SimulationState): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+/**
+ * `localStorage` access can throw rather than just being empty — Chrome does this when
+ * cookies/site data are blocked for the page's origin (privacy settings, some embedded/
+ * sandboxed contexts), and private-browsing quota limits can trip `setItem` too. Both
+ * functions below report that as a normal failure (`false`/`null`) rather than an uncaught
+ * exception, so the Save/Load buttons can show a real "didn't work" message instead of
+ * silently doing nothing.
+ */
+export function saveToLocalStorage(state: SimulationState): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-export function hasLocalStorageSave(): boolean {
-  return localStorage.getItem(STORAGE_KEY) !== null;
-}
-
-/** Reads back the quick-resume save written by {@link saveToLocalStorage}, or null if there is none or it's unreadable. */
+/** Reads back the quick-resume save written by {@link saveToLocalStorage}, or null if there is none, it's unreadable, or storage access failed. */
 export function loadFromLocalStorage(): SimulationState | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  return raw === null ? null : parseSnapshot(raw);
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw === null ? null : parseSnapshot(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** Triggers a browser download of `state` as a shareable JSON file (#29's file-export path). */

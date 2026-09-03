@@ -115,7 +115,7 @@ export class Simulation {
    */
   toState(): SimulationState {
     if (!(this.rng instanceof SeededRNG)) {
-      throw new Error('Simulation.toState requires a SeededRNG-backed simulation');
+      throw new TypeError('Simulation.toState requires a SeededRNG-backed simulation');
     }
     return {
       version: SIMULATION_STATE_VERSION,

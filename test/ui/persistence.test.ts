@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { SIMULATION_STATE_VERSION, SimulationState } from '../../src/engine/simulation';
 import { defaultSettings } from '../../src/engine/settings';
-import { isSimulationState, parseSnapshot } from '../../src/ui/persistence';
+import { isSimulationState, loadFromLocalStorage, parseSnapshot, saveToLocalStorage } from '../../src/ui/persistence';
 
 function validState(): SimulationState {
   return {
@@ -53,5 +53,61 @@ describe('parseSnapshot', () => {
 
   it('returns null for valid JSON that is not a simulation state', () => {
     expect(parseSnapshot(JSON.stringify({ hello: 'world' }))).toBeNull();
+  });
+});
+
+/**
+ * A minimal in-memory `Storage` stand-in — the test environment (`vitest.config.ts`'s
+ * `environment: 'node'`) has no real `localStorage` global — that also lets individual
+ * tests swap in a `setItem`/`getItem` that throws, mimicking Chrome's real (if unusual)
+ * behavior when a page's site data/cookies are blocked (#29's Save/Load bug report).
+ */
+function installMockStorage(overrides: Partial<Pick<Storage, 'getItem' | 'setItem'>> = {}): void {
+  const store = new Map<string, string>();
+  const storage: Partial<Storage> = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => {
+      store.set(key, value);
+    },
+    ...overrides,
+  };
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true });
+}
+
+describe('saveToLocalStorage / loadFromLocalStorage', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, 'localStorage');
+  });
+
+  it('round-trips a state through localStorage', () => {
+    installMockStorage();
+    const state = validState();
+    expect(saveToLocalStorage(state)).toBe(true);
+    expect(loadFromLocalStorage()).toEqual(state);
+  });
+
+  it('returns null from loadFromLocalStorage when nothing has been saved yet', () => {
+    installMockStorage();
+    expect(loadFromLocalStorage()).toBeNull();
+  });
+
+  it('returns false (not throw) when localStorage.setItem throws, e.g. blocked site data', () => {
+    installMockStorage({
+      setItem: () => {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
+    expect(() => saveToLocalStorage(validState())).not.toThrow();
+    expect(saveToLocalStorage(validState())).toBe(false);
+  });
+
+  it('returns null (not throw) when localStorage.getItem throws', () => {
+    installMockStorage({
+      getItem: () => {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
+    expect(() => loadFromLocalStorage()).not.toThrow();
+    expect(loadFromLocalStorage()).toBeNull();
   });
 });

@@ -349,8 +349,7 @@ worker.onmessage = (event: MessageEvent) => {
     const action = pendingExport;
     pendingExport = null;
     if (action === 'save') {
-      saveToLocalStorage(message.state);
-      flashHint('Saved');
+      flashHint(saveToLocalStorage(message.state) ? 'Saved' : 'Could not save (browser storage unavailable)');
     } else if (action === 'download') {
       downloadSnapshot(message.state);
       flashHint('Exported');
