@@ -118,6 +118,26 @@
           </div>
           <hr class="controls-menu-divider" />
           <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #4f8cff"></span>Save / Load</div>
+            <button type="button" class="controls-menu-row" id="menu-save-btn" role="menuitem" title="Save to this browser">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg>
+              <span class="label">Save</span>
+            </button>
+            <button type="button" class="controls-menu-row" id="menu-load-btn" role="menuitem" title="Load from this browser">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg>
+              <span class="label">Load</span>
+            </button>
+            <button type="button" class="controls-menu-row" id="menu-export-btn" role="menuitem" title="Download a save file to share">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-download"></use></svg>
+              <span class="label">Export to file</span>
+            </button>
+            <button type="button" class="controls-menu-row" id="menu-import-btn" role="menuitem" title="Load a save file from disk">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-upload"></use></svg>
+              <span class="label">Import from file</span>
+            </button>
+          </div>
+          <hr class="controls-menu-divider" />
+          <div class="controls-menu-group">
             <div class="controls-menu-group-title"><span class="dot" style="background: #a855f7"></span>Help</div>
             <div class="shortcut-table">
               <kbd>Space</kbd><span>Pause / resume</span>
@@ -132,6 +152,7 @@
         </div>
       </footer>
     </div>
+    <input type="file" id="import-file-input" class="hidden" accept="application/json" aria-hidden="true" />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -11,6 +11,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
+import { downloadSnapshot, loadFromLocalStorage, parseSnapshot, saveToLocalStorage } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
@@ -204,6 +205,22 @@ const ICON_DEFS_SVG = `
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8 V8.01 M11 12 H12 V17 H13" />
     </symbol>
+    <symbol id="ic-save" viewBox="0 0 24 24">
+      <path d="M5 4.5 H16 L19.5 8 V18.5 A1 1 0 0 1 18.5 19.5 H5.5 A1 1 0 0 1 4.5 18.5 V5.5 A1 1 0 0 1 5.5 4.5 Z" />
+      <path d="M8 4.5 V9.5 H15 V4.5" />
+      <path d="M8 19.5 V14.5 H16 V19.5" />
+    </symbol>
+    <symbol id="ic-folder" viewBox="0 0 24 24">
+      <path d="M3.5 7.5 A1 1 0 0 1 4.5 6.5 H9.5 L11.5 8.5 H19.5 A1 1 0 0 1 20.5 9.5 V17.5 A1 1 0 0 1 19.5 18.5 H4.5 A1 1 0 0 1 3.5 17.5 Z" />
+    </symbol>
+    <symbol id="ic-download" viewBox="0 0 24 24">
+      <path d="M12 4 V15 M8 11 L12 15 L16 11" />
+      <path d="M4.5 17 V18.5 A1 1 0 0 0 5.5 19.5 H18.5 A1 1 0 0 0 19.5 18.5 V17" />
+    </symbol>
+    <symbol id="ic-upload" viewBox="0 0 24 24">
+      <path d="M12 15 V4 M8 8 L12 4 L16 8" />
+      <path d="M4.5 17 V18.5 A1 1 0 0 0 5.5 19.5 H18.5 A1 1 0 0 0 19.5 18.5 V17" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -261,6 +278,11 @@ const controlsMenuBtn = document.querySelector<HTMLButtonElement>('#controls-men
 const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
+const menuSaveBtn = document.querySelector<HTMLButtonElement>('#menu-save-btn');
+const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
+const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
+const menuImportBtn = document.querySelector<HTMLButtonElement>('#menu-import-btn');
+const importFileInput = document.querySelector<HTMLInputElement>('#import-file-input');
 
 if (
   !canvas ||
@@ -286,7 +308,12 @@ if (
   !controlsMenuBtn ||
   !controlsMenuEl ||
   !menuDrawerToggle ||
-  !menuLegendToggle
+  !menuLegendToggle ||
+  !menuSaveBtn ||
+  !menuLoadBtn ||
+  !menuExportBtn ||
+  !menuImportBtn ||
+  !importFileInput
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
@@ -307,13 +334,27 @@ let latestSnapshot: SimulationSnapshot | null = null;
 let entityByPosition = new Map<string, Entity>();
 /** Id-keyed index of organics only (minerals have no stable id), so the inspector can keep following an organic as it moves. */
 let organicById = new Map<number, Organic>();
-/** Settings never changes after the worker starts, so this is captured once from its one-off 'settings' message rather than resent with every snapshot. */
+/** Settings only changes wholesale on an import (#29), so this is refreshed from the worker's 'settings' message rather than resent with every snapshot. */
 let engineSettings: { maxAge: number; maxSize: number } | null = null;
+/** Which action a pending 'exportState' round-trip is for — the worker's reply is generic, so this remembers what to do once it arrives. */
+let pendingExport: 'save' | 'download' | null = null;
 
 worker.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerResponse;
   if (message.type === 'settings') {
     engineSettings = { maxAge: message.maxAge, maxSize: message.maxSize };
+    return;
+  }
+  if (message.type === 'exportedState') {
+    const action = pendingExport;
+    pendingExport = null;
+    if (action === 'save') {
+      saveToLocalStorage(message.state);
+      flashHint('Saved');
+    } else if (action === 'download') {
+      downloadSnapshot(message.state);
+      flashHint('Exported');
+    }
     return;
   }
   latestSnapshot = message;
@@ -443,13 +484,16 @@ document.addEventListener('click', (event) => {
   closeControlsMenu();
 });
 
+/** What the hint text shows absent any transient message — depends on inspect mode. */
+const defaultHint = (): string => (inspectMode ? 'Tap a cell to inspect it' : 'Tap the grid to add a creature');
+
 /** Turns off inspect mode and hides the inspector, however it was entered. */
 const exitInspectMode = (): void => {
   inspectMode = false;
   inspectBtn.setAttribute('aria-pressed', 'false');
   inspectBtn.title = 'Inspect cells on the grid (I)';
   canvas.classList.remove('inspecting');
-  hintEl.textContent = 'Tap the grid to add a creature';
+  hintEl.textContent = defaultHint();
   inspectedTarget = null;
   selectedStateIndex = null;
   closeLegend();
@@ -464,8 +508,72 @@ const toggleInspectMode = (): void => {
   inspectBtn.setAttribute('aria-pressed', 'true');
   inspectBtn.title = 'Exit inspect mode (I)';
   canvas.classList.add('inspecting');
-  hintEl.textContent = 'Tap a cell to inspect it';
+  hintEl.textContent = defaultHint();
 };
+
+/** Briefly shows a status message (e.g. "Saved") in the footer hint, reverting to the normal hint after a beat. */
+let hintResetTimer: number | null = null;
+const flashHint = (message: string): void => {
+  hintEl.textContent = message;
+  if (hintResetTimer !== null) window.clearTimeout(hintResetTimer);
+  hintResetTimer = window.setTimeout(() => {
+    hintEl.textContent = defaultHint();
+    hintResetTimer = null;
+  }, 1800);
+};
+
+/**
+ * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
+ * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
+ * for sharing with someone else. All four close the popover, matching a one-shot menu action
+ * rather than a toggle.
+ */
+menuSaveBtn.addEventListener('click', () => {
+  pendingExport = 'save';
+  postToWorker({ type: 'exportState' });
+  closeControlsMenu();
+});
+
+menuExportBtn.addEventListener('click', () => {
+  pendingExport = 'download';
+  postToWorker({ type: 'exportState' });
+  closeControlsMenu();
+});
+
+menuLoadBtn.addEventListener('click', () => {
+  closeControlsMenu();
+  const state = loadFromLocalStorage();
+  if (!state) {
+    flashHint('No saved simulation found');
+    return;
+  }
+  postToWorker({ type: 'importState', state });
+  flashHint('Loaded');
+});
+
+menuImportBtn.addEventListener('click', () => {
+  importFileInput.click();
+  closeControlsMenu();
+});
+
+importFileInput.addEventListener('change', () => {
+  const file = importFileInput.files?.[0] ?? null;
+  // Cleared so picking the same file again still fires 'change'.
+  importFileInput.value = '';
+  if (!file) return;
+  file
+    .text()
+    .then((text) => {
+      const state = parseSnapshot(text);
+      if (!state) {
+        flashHint('Invalid save file');
+        return;
+      }
+      postToWorker({ type: 'importState', state });
+      flashHint('Imported');
+    })
+    .catch(() => flashHint('Could not read file'));
+});
 inspectBtn.addEventListener('click', toggleInspectMode);
 
 inspectorCloseBtn.addEventListener('click', exitInspectMode);
