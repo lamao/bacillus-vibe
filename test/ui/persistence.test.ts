@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SIMULATION_STATE_VERSION, SimulationState } from '../../src/engine/simulation';
 import { defaultSettings } from '../../src/engine/settings';
-import { isSimulationState, loadFromLocalStorage, parseSnapshot, saveToLocalStorage } from '../../src/ui/persistence';
+import { isSimulationState, loadQuickResume, parseSnapshot, saveQuickResume } from '../../src/ui/persistence';
 
 function validState(): SimulationState {
   return {
@@ -57,57 +57,90 @@ describe('parseSnapshot', () => {
 });
 
 /**
- * A minimal in-memory `Storage` stand-in — the test environment (`vitest.config.ts`'s
- * `environment: 'node'`) has no real `localStorage` global — that also lets individual
- * tests swap in a `setItem`/`getItem` that throws, mimicking Chrome's real (if unusual)
- * behavior when a page's site data/cookies are blocked (#29's Save/Load bug report).
+ * Just enough of an in-memory IndexedDB stand-in to exercise `saveQuickResume`/
+ * `loadQuickResume`'s open -> transaction -> objectStore -> put/get chain — the test
+ * environment (`vite.config.ts`'s `environment: 'node'`) has no real `indexedDB` global.
+ * Not a spec-complete IDBFactory; only the calls this module actually makes, plus a way to
+ * make `indexedDB.open` itself fail (mimicking a browser that blocks IndexedDB entirely).
  */
-function installMockStorage(overrides: Partial<Pick<Storage, 'getItem' | 'setItem'>> = {}): void {
-  const store = new Map<string, string>();
-  const storage: Partial<Storage> = {
-    getItem: (key) => store.get(key) ?? null,
-    setItem: (key, value) => {
+function installMockIndexedDb(options: { openFails?: boolean } = {}): void {
+  const store = new Map<string, unknown>();
+
+  class FakeRequest<T> {
+    onsuccess: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    result!: T;
+    error: Error | null = null;
+    succeed(result: T): void {
+      this.result = result;
+      queueMicrotask(() => this.onsuccess?.());
+    }
+    fail(error: Error): void {
+      this.error = error;
+      queueMicrotask(() => this.onerror?.());
+    }
+  }
+
+  class FakeObjectStore {
+    put(value: unknown, key: string): FakeRequest<unknown> {
+      const request = new FakeRequest<unknown>();
       store.set(key, value);
+      request.succeed(undefined);
+      return request;
+    }
+    get(key: string): FakeRequest<unknown> {
+      const request = new FakeRequest<unknown>();
+      request.succeed(store.get(key));
+      return request;
+    }
+  }
+
+  class FakeDatabase {
+    transaction(): { objectStore: () => FakeObjectStore } {
+      return { objectStore: () => new FakeObjectStore() };
+    }
+    close(): void {}
+  }
+
+  const fakeIndexedDb = {
+    open(): FakeRequest<FakeDatabase> {
+      const request = new FakeRequest<FakeDatabase>();
+      if (options.openFails) {
+        request.fail(new Error('IndexedDB unavailable'));
+      } else {
+        request.succeed(new FakeDatabase());
+      }
+      return request;
     },
-    ...overrides,
   };
-  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true });
+
+  Object.defineProperty(globalThis, 'indexedDB', { value: fakeIndexedDb, configurable: true, writable: true });
 }
 
-describe('saveToLocalStorage / loadFromLocalStorage', () => {
+describe('saveQuickResume / loadQuickResume', () => {
   afterEach(() => {
-    Reflect.deleteProperty(globalThis, 'localStorage');
+    Reflect.deleteProperty(globalThis, 'indexedDB');
   });
 
-  it('round-trips a state through localStorage', () => {
-    installMockStorage();
+  it('round-trips a state through IndexedDB', async () => {
+    installMockIndexedDb();
     const state = validState();
-    expect(saveToLocalStorage(state)).toBe(true);
-    expect(loadFromLocalStorage()).toEqual(state);
+    await expect(saveQuickResume(state)).resolves.toBe(true);
+    await expect(loadQuickResume()).resolves.toEqual(state);
   });
 
-  it('returns null from loadFromLocalStorage when nothing has been saved yet', () => {
-    installMockStorage();
-    expect(loadFromLocalStorage()).toBeNull();
+  it('resolves null from loadQuickResume when nothing has been saved yet', async () => {
+    installMockIndexedDb();
+    await expect(loadQuickResume()).resolves.toBeNull();
   });
 
-  it('returns false (not throw) when localStorage.setItem throws, e.g. blocked site data', () => {
-    installMockStorage({
-      setItem: () => {
-        throw new DOMException('blocked', 'SecurityError');
-      },
-    });
-    expect(() => saveToLocalStorage(validState())).not.toThrow();
-    expect(saveToLocalStorage(validState())).toBe(false);
+  it('resolves false (never rejects) when the database cannot be opened', async () => {
+    installMockIndexedDb({ openFails: true });
+    await expect(saveQuickResume(validState())).resolves.toBe(false);
   });
 
-  it('returns null (not throw) when localStorage.getItem throws', () => {
-    installMockStorage({
-      getItem: () => {
-        throw new DOMException('blocked', 'SecurityError');
-      },
-    });
-    expect(() => loadFromLocalStorage()).not.toThrow();
-    expect(loadFromLocalStorage()).toBeNull();
+  it('resolves null (never rejects) from loadQuickResume when the database cannot be opened', async () => {
+    installMockIndexedDb({ openFails: true });
+    await expect(loadQuickResume()).resolves.toBeNull();
   });
 });

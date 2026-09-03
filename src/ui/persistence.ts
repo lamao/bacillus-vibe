@@ -1,14 +1,12 @@
 import { SIMULATION_STATE_VERSION, SimulationState } from '../engine/simulation';
 
-const STORAGE_KEY = 'petri:save-v1';
-
 /**
- * Structural check for data coming from outside the app (localStorage, an imported file)
+ * Structural check for data coming from outside the app (IndexedDB, an imported file)
  * before it's trusted as a `SimulationState` and handed to the worker — catches corrupted
- * JSON, a save from an incompatible future version, or an unrelated file the user picked
- * by mistake. Doesn't validate every nested field (e.g. each entity's shape): a JSON parse
- * failure or a wrong top-level shape covers the realistic "not a Petri save" cases, and the
- * worker only ever loads what this app itself exported.
+ * data, a save from an incompatible future version, or an unrelated file the user picked
+ * by mistake. Doesn't validate every nested field (e.g. each entity's shape): a wrong
+ * top-level shape covers the realistic "not a Petri save" cases, and the worker only ever
+ * loads what this app itself exported.
  */
 export function isSimulationState(value: unknown): value is SimulationState {
   if (typeof value !== 'object' || value === null) return false;
@@ -26,44 +24,12 @@ export function isSimulationState(value: unknown): value is SimulationState {
   );
 }
 
-/** Parses save data from a file/localStorage read, returning null (never throwing) on invalid JSON or shape. */
+/** Parses save data from an imported file, returning null (never throwing) on invalid JSON or shape. */
 export function parseSnapshot(json: string): SimulationState | null {
   try {
     const parsed: unknown = JSON.parse(json);
     return isSimulationState(parsed) ? parsed : null;
   } catch {
-    return null;
-  }
-}
-
-/**
- * `localStorage` access can throw rather than just being empty — Chrome does this when
- * cookies/site data are blocked for the page's origin (privacy settings, some embedded/
- * sandboxed contexts), and private-browsing quota limits can trip `setItem` too. Both
- * functions below report that as a normal failure (`false`/`null`) rather than an uncaught
- * exception, so the Save/Load buttons can show a real "didn't work" message instead of
- * silently doing nothing.
- */
-export function saveToLocalStorage(state: SimulationState): boolean {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    return true;
-  } catch (err) {
-    // Logged (not swallowed) so the actual DOMException — SecurityError from blocked site
-    // data, QuotaExceededError, etc. — shows up in DevTools; the UI itself only shows a
-    // generic "storage unavailable" hint since the specific reason isn't actionable there.
-    console.error('Petri: could not save to localStorage', err);
-    return false;
-  }
-}
-
-/** Reads back the quick-resume save written by {@link saveToLocalStorage}, or null if there is none, it's unreadable, or storage access failed. */
-export function loadFromLocalStorage(): SimulationState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw === null ? null : parseSnapshot(raw);
-  } catch (err) {
-    console.error('Petri: could not read from localStorage', err);
     return null;
   }
 }
@@ -79,5 +45,71 @@ export function downloadSnapshot(state: SimulationState): void {
     link.click();
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Quick-resume storage (#29's Save/Load, as opposed to Export/Import's files) uses
+ * IndexedDB rather than `localStorage`. A snapshot's `entities` array carries every
+ * organic's full 25-entry instruction matrix, so a long-running default (80x80) grid's
+ * JSON easily reaches several megabytes and a full grid's over twenty — comfortably past
+ * `localStorage`'s ~5-10MB per-origin quota (confirmed by an actual `QuotaExceededError`
+ * on save). IndexedDB's quota is tied to available disk space instead, and stores the
+ * state via structured clone directly (no JSON string round-trip needed).
+ */
+const DB_NAME = 'petri';
+const DB_VERSION = 1;
+const STORE_NAME = 'saves';
+/** Single fixed key: this is a one-slot "quick resume" save, not a save-file browser. */
+const QUICK_RESUME_KEY = 'quick-resume';
+
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error as Error);
+  });
+}
+
+/** Wraps an already-issued `IDBRequest` in a Promise settling on its `success`/`error` events. */
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error as Error);
+  });
+}
+
+/** Saves `state` as the single quick-resume slot, overwriting any previous one. Never throws — resolves false on failure. */
+export async function saveQuickResume(state: SimulationState): Promise<boolean> {
+  try {
+    const db = await openDb();
+    try {
+      await requestToPromise(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(state, QUICK_RESUME_KEY));
+      return true;
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.error('Petri: could not save', err);
+    return false;
+  }
+}
+
+/** Reads back the quick-resume save written by {@link saveQuickResume}, or null if there is none or storage access failed. */
+export async function loadQuickResume(): Promise<SimulationState | null> {
+  try {
+    const db = await openDb();
+    try {
+      const value = await requestToPromise(db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(QUICK_RESUME_KEY));
+      return isSimulationState(value) ? value : null;
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.error('Petri: could not load', err);
+    return null;
   }
 }

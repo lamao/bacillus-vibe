@@ -71,7 +71,11 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   controls: pause/resume, add-random-creature, pointer-based tap/click-to-add
   directly on the grid (works with touch and mouse alike), and the Controls
   menu's Save/Load group (`src/ui/persistence.ts`): Save/Load round-trip a
-  snapshot through this browser's `localStorage` for quick resume; Export/
+  snapshot through this browser's IndexedDB for quick resume (not
+  `localStorage` — a snapshot's entities each carry a full 25-entry
+  instruction matrix, so a long-running default grid's JSON easily reaches
+  several megabytes, comfortably past `localStorage`'s ~5-10MB per-origin
+  quota; IndexedDB's is tied to available disk space instead); Export/
   Import round-trip it through a downloaded/picked JSON file for sharing a
   run with someone else — both paths go through the same worker
   `exportState`/`importState` messages and `SimulationState` shape.

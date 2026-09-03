@@ -11,7 +11,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
-import { downloadSnapshot, loadFromLocalStorage, parseSnapshot, saveToLocalStorage } from './ui/persistence';
+import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
@@ -349,7 +349,9 @@ worker.onmessage = (event: MessageEvent) => {
     const action = pendingExport;
     pendingExport = null;
     if (action === 'save') {
-      flashHint(saveToLocalStorage(message.state) ? 'Saved' : 'Could not save (browser storage unavailable)');
+      saveQuickResume(message.state).then((ok) => {
+        flashHint(ok ? 'Saved' : 'Could not save (browser storage unavailable)');
+      });
     } else if (action === 'download') {
       downloadSnapshot(message.state);
       flashHint('Exported');
@@ -541,13 +543,14 @@ menuExportBtn.addEventListener('click', () => {
 
 menuLoadBtn.addEventListener('click', () => {
   closeControlsMenu();
-  const state = loadFromLocalStorage();
-  if (!state) {
-    flashHint('No saved simulation found');
-    return;
-  }
-  postToWorker({ type: 'importState', state });
-  flashHint('Loaded');
+  loadQuickResume().then((state) => {
+    if (!state) {
+      flashHint('No saved simulation found');
+      return;
+    }
+    postToWorker({ type: 'importState', state });
+    flashHint('Loaded');
+  });
 });
 
 menuImportBtn.addEventListener('click', () => {
