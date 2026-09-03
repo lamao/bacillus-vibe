@@ -48,7 +48,11 @@ export function saveToLocalStorage(state: SimulationState): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     return true;
-  } catch {
+  } catch (err) {
+    // Logged (not swallowed) so the actual DOMException — SecurityError from blocked site
+    // data, QuotaExceededError, etc. — shows up in DevTools; the UI itself only shows a
+    // generic "storage unavailable" hint since the specific reason isn't actionable there.
+    console.error('Petri: could not save to localStorage', err);
     return false;
   }
 }
@@ -58,7 +62,8 @@ export function loadFromLocalStorage(): SimulationState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw === null ? null : parseSnapshot(raw);
-  } catch {
+  } catch (err) {
+    console.error('Petri: could not read from localStorage', err);
     return null;
   }
 }
