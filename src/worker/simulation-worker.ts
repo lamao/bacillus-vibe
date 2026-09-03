@@ -1,7 +1,7 @@
 import { SeededRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
-import { WORKER_LOOP_FPS, WorkerRequest, SimulationSnapshot, WorkerSettings } from './protocol';
+import { WORKER_LOOP_FPS, WorkerRequest, ExportedState, SimulationSnapshot, WorkerSettings } from './protocol';
 
 const INITIAL_POPULATION = 150;
 
@@ -38,8 +38,11 @@ const SNAPSHOT_INTERVAL_MS = 1000 / WORKER_LOOP_FPS;
  */
 const TICK_BUDGET_MS = SNAPSHOT_INTERVAL_MS / 2;
 
-const settings = defaultSettings();
-const simulation = new Simulation(settings, new SeededRNG());
+// Reassigned wholesale by 'importState' (#29), which replaces the running simulation —
+// settings included, since a loaded save may have different grid dimensions — rather than
+// mutating either in place.
+let settings = defaultSettings();
+let simulation = new Simulation(settings, new SeededRNG());
 for (let i = 0; i < INITIAL_POPULATION; i++) {
   simulation.spawnRandomOrganic();
 }
@@ -69,6 +72,20 @@ self.onmessage = (event: MessageEvent) => {
       // Runs even while paused: `paused` only gates the automatic loop() below, and a
       // manual step should work regardless of the current tick-rate/accumulator state.
       simulation.step();
+      postSnapshot();
+      break;
+    case 'exportState': {
+      const exported: ExportedState = { type: 'exportedState', state: simulation.toState() };
+      self.postMessage(exported);
+      break;
+    }
+    case 'importState':
+      settings = message.state.settings;
+      simulation = Simulation.fromState(message.state);
+      // The old backlog belongs to a simulation that no longer exists; starting the
+      // restored one at zero avoids an immediate catch-up burst of ticks.
+      tickAccumulator = 0;
+      postSettings();
       postSnapshot();
       break;
   }
@@ -120,11 +137,18 @@ function loop(): void {
   postSnapshotIfDue();
 }
 
-// Settings never changes after this, so it's posted once up front rather than repeated
-// on every snapshot; sent before the first postSnapshot() so it's guaranteed to arrive
-// first (postMessage preserves send order on a single channel).
-const settingsMessage: WorkerSettings = { type: 'settings', maxAge: settings.maxAge, maxSize: settings.maxSize };
-self.postMessage(settingsMessage);
+/**
+ * Posts the two Settings fields the Averages tab needs (see WorkerSettings' doc). Settings
+ * only ever changes wholesale on 'importState', not incrementally, so this is called once
+ * up front and again after each import rather than repeated on every snapshot.
+ */
+function postSettings(): void {
+  const settingsMessage: WorkerSettings = { type: 'settings', maxAge: settings.maxAge, maxSize: settings.maxSize };
+  self.postMessage(settingsMessage);
+}
 
+// Sent before the first postSnapshot() so it's guaranteed to arrive first (postMessage
+// preserves send order on a single channel).
+postSettings();
 postSnapshot();
 setInterval(loop, SNAPSHOT_INTERVAL_MS);

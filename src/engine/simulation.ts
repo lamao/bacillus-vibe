@@ -12,11 +12,31 @@ import {
 } from './phases';
 import { RNG, SeededRNG } from './rng';
 import { Settings, defaultSettings } from './settings';
-import { DNA, Organic, Position } from './types';
+import { DNA, Entity, Organic, Position } from './types';
 
 export interface TickResult {
   births: number;
   deaths: number;
+}
+
+/** Bumped whenever {@link SimulationState}'s shape changes in a way old saves can't be read as. */
+export const SIMULATION_STATE_VERSION = 1;
+
+/**
+ * Everything needed to resume a `Simulation` later or share it with someone else (#29):
+ * settings, RNG state, tick/id counters, and the grid's entities. Deliberately plain,
+ * JSON-serializable data (no class instances, no `Map`/`Set`) so it round-trips through
+ * `localStorage` or a downloaded file with a plain `JSON.stringify`/`parse`.
+ */
+export interface SimulationState {
+  version: number;
+  settings: Settings;
+  rngState: number;
+  tickCount: number;
+  idCounter: number;
+  totalBirths: number;
+  totalDeaths: number;
+  entities: Entity[];
 }
 
 /** Runs one full tick: all eight phases, in order, over the whole population. */
@@ -86,5 +106,39 @@ export class Simulation {
     this.totalBirths += births;
     this.totalDeaths += deaths;
     this.tickCount += 1;
+  }
+
+  /**
+   * Snapshots this simulation's full state for save/load (#29). Requires a `SeededRNG` —
+   * the only concrete `RNG` used outside tests, and the only one whose internal state can
+   * be read back — so a byte-for-byte resume via {@link fromState} is possible.
+   */
+  toState(): SimulationState {
+    if (!(this.rng instanceof SeededRNG)) {
+      throw new TypeError('Simulation.toState requires a SeededRNG-backed simulation');
+    }
+    return {
+      version: SIMULATION_STATE_VERSION,
+      settings: this.settings,
+      rngState: this.rng.getState(),
+      tickCount: this.tickCount,
+      idCounter: this.idCounter,
+      totalBirths: this.totalBirths,
+      totalDeaths: this.totalDeaths,
+      entities: this.grid.entities(),
+    };
+  }
+
+  /** Rebuilds a `Simulation` from a snapshot taken by {@link toState}, resuming — RNG included — exactly where it left off. */
+  static fromState(state: SimulationState): Simulation {
+    const sim = new Simulation(state.settings, new SeededRNG(state.rngState));
+    sim.idCounter = state.idCounter;
+    sim.tickCount = state.tickCount;
+    sim.totalBirths = state.totalBirths;
+    sim.totalDeaths = state.totalDeaths;
+    for (const entity of state.entities) {
+      sim.grid.set(entity.position.x, entity.position.y, entity);
+    }
+    return sim;
   }
 }

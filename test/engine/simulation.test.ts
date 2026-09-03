@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { SeededRNG } from '../../src/engine/rng';
 import { defaultSettings } from '../../src/engine/settings';
-import { Simulation, tick } from '../../src/engine/simulation';
+import { Simulation, SIMULATION_STATE_VERSION, tick } from '../../src/engine/simulation';
 import { Instruction } from '../../src/engine/types';
 import { dna, emptyGrid, mineral, organic, place, testSettings } from './fixtures';
 import { MockRNG } from './mockRng';
@@ -136,5 +137,71 @@ describe('Simulation', () => {
     sim.step(); // age reaches maxAge(2) -> dies this tick
     expect(sim.totalBirths).toBe(0);
     expect(sim.totalDeaths).toBe(1);
+  });
+});
+
+describe('Simulation save/load (#29)', () => {
+  it('toState() throws when the simulation is not backed by a SeededRNG', () => {
+    const sim = new Simulation(testSettings(), new MockRNG([0.5]));
+    expect(() => sim.toState()).toThrow();
+  });
+
+  it('toState() captures a JSON-serializable snapshot with the version tag', () => {
+    const sim = new Simulation(testSettings(), new SeededRNG(7));
+    sim.spawnOrganicAt({ x: 1, y: 1 }, dna());
+    const state = sim.toState();
+    expect(state.version).toBe(SIMULATION_STATE_VERSION);
+    // Must survive an actual JSON round-trip, not just structural equality in memory —
+    // this is exactly what localStorage/file save-load does with it.
+    expect(() => JSON.parse(JSON.stringify(state))).not.toThrow();
+  });
+
+  it('fromState() rebuilds the grid, counters, and settings from a snapshot', () => {
+    const settings = testSettings({ maxAge: 2, permanentConsumption: 0, sunYield: 0 });
+    const sim = new Simulation(settings, new SeededRNG(1));
+    sim.spawnOrganicAt({ x: 3, y: 3 }, dna({ consume: 'Sun' }));
+    sim.step();
+    const state = JSON.parse(JSON.stringify(sim.toState()));
+
+    const restored = Simulation.fromState(state);
+    expect(restored.settings).toEqual(settings);
+    expect(restored.tickCount).toBe(sim.tickCount);
+    expect(restored.totalBirths).toBe(sim.totalBirths);
+    expect(restored.totalDeaths).toBe(sim.totalDeaths);
+    expect(restored.grid.entities()).toEqual(sim.grid.entities());
+  });
+
+  it('resumes ticking byte-for-byte identically to the original after a save/load round-trip', () => {
+    const settings = testSettings({ width: 12, height: 12 });
+    const original = new Simulation(settings, new SeededRNG(99));
+    for (let i = 0; i < 15; i++) original.spawnRandomOrganic();
+    for (let t = 0; t < 10; t++) original.step();
+
+    // Simulates the actual localStorage/file path: serialize to a string, parse it back.
+    const state = JSON.parse(JSON.stringify(original.toState()));
+    const restored = Simulation.fromState(state);
+
+    for (let t = 0; t < 20; t++) {
+      original.step();
+      restored.step();
+    }
+
+    expect(restored.grid.entities()).toEqual(original.grid.entities());
+    expect(restored.tickCount).toBe(original.tickCount);
+    expect(restored.totalBirths).toBe(original.totalBirths);
+    expect(restored.totalDeaths).toBe(original.totalDeaths);
+  });
+
+  it("preserves the id counter so ids assigned after restore don't collide with the snapshot's entities", () => {
+    const sim = new Simulation(testSettings(), new SeededRNG(3));
+    const first = sim.spawnOrganicAt({ x: 0, y: 0 }, dna());
+    const second = sim.spawnOrganicAt({ x: 1, y: 1 }, dna());
+    const state = sim.toState();
+
+    const restored = Simulation.fromState(state);
+    const third = restored.spawnOrganicAt({ x: 2, y: 2 }, dna());
+
+    expect(third?.id).not.toBe(first?.id);
+    expect(third?.id).not.toBe(second?.id);
   });
 });

@@ -1,3 +1,4 @@
+import { SimulationState } from '../engine/simulation';
 import { GridView, Position } from '../engine/types';
 
 /**
@@ -22,7 +23,9 @@ export type WorkerRequest =
   | { type: 'setTicksPerSecond'; ticksPerSecond: number }
   | { type: 'spawnRandomOrganic' }
   | { type: 'spawnOrganicAt'; position: Position }
-  | { type: 'stepOnce' };
+  | { type: 'stepOnce' }
+  | { type: 'exportState' }
+  | { type: 'importState'; state: SimulationState };
 
 /**
  * A snapshot of the simulation's grid, posted from the worker once per
@@ -49,4 +52,10 @@ export interface WorkerSettings {
   maxSize: number;
 }
 
-export type WorkerResponse = SimulationSnapshot | WorkerSettings;
+/** Reply to an `exportState` request, carrying a full save/load snapshot (#29) of the running simulation. */
+export interface ExportedState {
+  type: 'exportedState';
+  state: SimulationState;
+}
+
+export type WorkerResponse = SimulationSnapshot | WorkerSettings | ExportedState;

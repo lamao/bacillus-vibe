@@ -47,7 +47,10 @@ npm run coverage   # vitest run --coverage (lcov + text report)
     unit-testable in isolation.
   - `simulation.ts` — orchestrates the phases into one `tick()`, plus a
     `Simulation` class wrapping grid + settings + RNG + id/tick counters
-    for the UI to drive.
+    for the UI to drive. `toState()`/`fromState()` (#29) snapshot/restore
+    the whole thing — settings, RNG state, counters, and every entity — as
+    plain JSON (`SimulationState`), for save/load; requires a `SeededRNG`,
+    since that's the only `RNG` whose state can be read back.
 - **`src/ui/`** — Canvas2D renderer (`renderer.ts`) that reads a `GridView`
   (`src/engine/types.ts` — just `width`/`height`/`entities`, decoupled from
   the `Grid` class) and draws it; organics render brighter with a white
@@ -56,14 +59,26 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   off the main thread in a dedicated Worker (`simulation-worker.ts`), so
   rendering stays smooth regardless of population size or tick rate. The
   worker owns simulation state exclusively; the main thread never mutates it
-  directly, only sends control messages (pause, speed, spawn) and receives
-  state snapshots — see `protocol.ts` for the message shapes.
+  directly, only sends control messages (pause, speed, spawn, `exportState`/
+  `importState` for #29's save/load) and receives state snapshots — see
+  `protocol.ts` for the message shapes. `importState` replaces the worker's
+  `Simulation` wholesale (settings included, since a loaded save may have
+  different grid dimensions), rather than mutating it in place.
 - **`src/main.ts`** — wires the renderer to a `requestAnimationFrame` loop
   that draws whatever snapshot the worker last posted (decoupled from the
   worker's own tick rate, which a speed slider controls via a
   `setTicksPerSecond` message, not frames-per-second), and hooks up
-  controls: pause/resume, add-random-creature, and pointer-based tap/
-  click-to-add directly on the grid (works with touch and mouse alike).
+  controls: pause/resume, add-random-creature, pointer-based tap/click-to-add
+  directly on the grid (works with touch and mouse alike), and the Controls
+  menu's Save/Load group (`src/ui/persistence.ts`): Save/Load round-trip a
+  snapshot through this browser's IndexedDB for quick resume (not
+  `localStorage` — a snapshot's entities each carry a full 25-entry
+  instruction matrix, so a long-running default grid's JSON easily reaches
+  several megabytes, comfortably past `localStorage`'s ~5-10MB per-origin
+  quota; IndexedDB's is tied to available disk space instead); Export/
+  Import round-trip it through a downloaded/picked JSON file for sharing a
+  run with someone else — both paths go through the same worker
+  `exportState`/`importState` messages and `SimulationState` shape.
 
 ## Domain model summary
 
