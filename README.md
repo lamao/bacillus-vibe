@@ -43,6 +43,15 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   - `dna.ts` — DNA generation and mutation.
   - `settings.ts` — all tunable simulation parameters (see table below),
     no hardcoded literals in the phase logic.
+  - `presets.ts` — named scenario presets (#32): each is a `Settings`
+    overrides bundle + an initial seeding recipe (population count, extra
+    scattered minerals, and a `genomeMode` — independently-random DNA per
+    organic, one shared DNA across the whole population, or independently-
+    random DNA with a fully randomized instruction matrix instead of the
+    tuned starter genome). `buildScenario()` builds a fresh `Simulation`
+    from a preset in one call, reusing `Simulation.spawnRandomOrganic`/
+    `spawnRandomMineral` (both drawing from the same `Simulation.rng`, kept
+    public for exactly this) rather than duplicating grid/RNG plumbing.
   - `phases.ts` — the eight tick phases, each independently exported and
     unit-testable in isolation.
   - `simulation.ts` — orchestrates the phases into one `tick()`, plus a
@@ -78,7 +87,12 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   quota; IndexedDB's is tied to available disk space instead); Export/
   Import round-trip it through a downloaded/picked JSON file for sharing a
   run with someone else — both paths go through the same worker
-  `exportState`/`importState` messages and `SimulationState` shape.
+  `exportState`/`importState` messages and `SimulationState` shape; and the
+  Controls menu's Scenario group (#32), built from `engine/presets.ts`'s
+  `SCENARIO_PRESETS` rather than hand-written per preset so the menu and the
+  engine's preset list can't drift apart — picking one posts an
+  `applyPreset` message that replaces the worker's running `Simulation`
+  wholesale, the same "act immediately, no confirmation" pattern as Load.
 
 ## Domain model summary
 

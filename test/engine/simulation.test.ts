@@ -114,6 +114,25 @@ describe('Simulation', () => {
     expect(second).toBeNull();
   });
 
+  it('spawnMineralAt places a mineral, and refuses an occupied cell', () => {
+    const sim = new Simulation(testSettings(), new MockRNG([0.5]));
+    const m = sim.spawnMineralAt({ x: 2, y: 2 }, 'Blue', 300);
+    expect(m).not.toBeNull();
+    expect(sim.grid.get(2, 2)).toBe(m);
+
+    const blocked = sim.spawnMineralAt({ x: 2, y: 2 }, 'Green', 100);
+    expect(blocked).toBeNull();
+  });
+
+  it('spawnRandomMineral places on a free cell and returns null once the grid is full', () => {
+    const settings = testSettings({ width: 1, height: 1 });
+    const sim = new Simulation(settings, new MockRNG([0]));
+    const first = sim.spawnRandomMineral('Red', 200);
+    expect(first).not.toBeNull();
+    const second = sim.spawnRandomMineral('Red', 200);
+    expect(second).toBeNull();
+  });
+
   it('step() advances the tick counter and mutates the grid', () => {
     const settings = testSettings({ permanentConsumption: 10 });
     const sim = new Simulation(settings, new MockRNG([0.5]));

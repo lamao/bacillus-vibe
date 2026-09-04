@@ -2,6 +2,7 @@ import { RNG, pick } from './rng';
 import {
   ALL_SUBSTANCES,
   Action,
+  Comparator,
   DNA,
   INSTRUCTION_MATRIX_SIZE,
   Instruction,
@@ -25,14 +26,19 @@ export function randomConsumeSubstance(rng: RNG): Substance {
   return pick(rng, ALL_SUBSTANCES);
 }
 
-export function randomDNA(rng: RNG): DNA {
+/**
+ * `behavior` defaults to the hardcoded starter genome per #5's "Resolved" decision —
+ * mutation introduces behavioral variety from there. Callers that want a population
+ * seeded with fully randomized behavior instead (e.g. the "Wild genomes" scenario
+ * preset, #32) can pass {@link randomInstructionMatrix}'s output explicitly.
+ */
+export function randomDNA(rng: RNG, behavior: InstructionMatrix = starterInstructionMatrix()): DNA {
   return {
     body: randomPhysicalSubstance(rng),
     consume: randomConsumeSubstance(rng),
     produce: randomPhysicalSubstance(rng),
     toxin: randomPhysicalSubstance(rng),
-    // Per #5's "Resolved" decision: one hardcoded starter genome, not randomized.
-    behavior: starterInstructionMatrix(),
+    behavior,
   };
 }
 
@@ -116,6 +122,28 @@ function gaussianNudge(rng: RNG, stdDev: number): number {
 /** A fresh jump offset spanning the ring both ways; `wrapMatrixIndex` normalizes it wherever it's applied. */
 function randomJumpOffset(rng: RNG): number {
   return rng.int(2 * INSTRUCTION_MATRIX_SIZE + 1) - INSTRUCTION_MATRIX_SIZE;
+}
+
+const COMPARATORS: readonly Comparator[] = ['<', '>='];
+
+/** One fully-randomized instruction: action, sensor, comparator, threshold, and jump offset. */
+function randomInstruction(rng: RNG): Instruction {
+  return {
+    action: randomAction(rng),
+    sensor: pick(rng, SENSORS),
+    comparator: pick(rng, COMPARATORS),
+    threshold: rng.next(),
+    jumpOffset: randomJumpOffset(rng),
+  };
+}
+
+/**
+ * A full 25-state instruction matrix of independently randomized instructions — unlike
+ * {@link starterInstructionMatrix}, not hand-tuned, so a population seeded with it starts
+ * from unproven "program soup" behavior rather than the vetted starter genome.
+ */
+export function randomInstructionMatrix(rng: RNG): InstructionMatrix {
+  return Array.from({ length: INSTRUCTION_MATRIX_SIZE }, () => randomInstruction(rng));
 }
 
 function applyBehaviorOperator(operator: BehaviorMutationOperator, instruction: Instruction, rng: RNG): Instruction {

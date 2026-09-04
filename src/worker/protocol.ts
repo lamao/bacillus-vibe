@@ -25,7 +25,8 @@ export type WorkerRequest =
   | { type: 'spawnOrganicAt'; position: Position }
   | { type: 'stepOnce' }
   | { type: 'exportState' }
-  | { type: 'importState'; state: SimulationState };
+  | { type: 'importState'; state: SimulationState }
+  | { type: 'applyPreset'; presetId: string };
 
 /**
  * A snapshot of the simulation's grid, posted from the worker once per

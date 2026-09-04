@@ -10,6 +10,7 @@ import {
   Substance,
   substanceOf,
 } from './engine/types';
+import { SCENARIO_PRESETS } from './engine/presets';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
@@ -221,6 +222,10 @@ const ICON_DEFS_SVG = `
       <path d="M12 15 V4 M8 8 L12 4 L16 8" />
       <path d="M4.5 17 V18.5 A1 1 0 0 0 5.5 19.5 H18.5 A1 1 0 0 0 19.5 18.5 V17" />
     </symbol>
+    <symbol id="ic-flask" viewBox="0 0 24 24">
+      <path d="M9.5 3.5 H14.5 M10.2 3.5 V9.2 L4.9 18.4 A1.4 1.4 0 0 0 6.1 20.5 H17.9 A1.4 1.4 0 0 0 19.1 18.4 L13.8 9.2 V3.5" />
+      <path d="M7.7 15 H16.3" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -278,6 +283,7 @@ const controlsMenuBtn = document.querySelector<HTMLButtonElement>('#controls-men
 const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
+const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
 const menuSaveBtn = document.querySelector<HTMLButtonElement>('#menu-save-btn');
 const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
@@ -309,6 +315,7 @@ if (
   !controlsMenuEl ||
   !menuDrawerToggle ||
   !menuLegendToggle ||
+  !menuScenarioListEl ||
   !menuSaveBtn ||
   !menuLoadBtn ||
   !menuExportBtn ||
@@ -522,6 +529,32 @@ const flashHint = (message: string): void => {
     hintResetTimer = null;
   }, 1800);
 };
+
+/**
+ * Scenario presets (#32): each row applies a named settings bundle + seeding recipe
+ * (`src/engine/presets.ts`), replacing the running simulation wholesale — same one-shot
+ * "act immediately, no confirmation" pattern as Save/Load below. Built from
+ * `SCENARIO_PRESETS` rather than hand-written per preset, so this list and the engine's
+ * stay in sync automatically.
+ */
+for (const preset of SCENARIO_PRESETS) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitem');
+  row.title = preset.description;
+  row.appendChild(buildIcon('ic-flask', 'btn-icon'));
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = preset.name;
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    postToWorker({ type: 'applyPreset', presetId: preset.id });
+    flashHint(`Scenario: ${preset.name}`);
+    closeControlsMenu();
+  });
+  menuScenarioListEl.appendChild(row);
+}
 
 /**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
