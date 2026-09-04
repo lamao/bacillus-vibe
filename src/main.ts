@@ -655,9 +655,10 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
  * Global keyboard shortcuts for the footer/panel buttons above. Ignored while Ctrl/Cmd/Alt
  * is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a form
  * control (there's currently only the speed slider, but this guards against future text
- * inputs too). Shift is not filtered out, since it's used to distinguish Shift+S (Save)
- * from plain S (Step). Esc closes whichever overlay is topmost: the legend modal first,
- * then (since exiting inspect mode already hides the inspector panel) inspect mode itself.
+ * inputs too). Shift is not filtered out, since it's used for Save/Load's Shift+S/Shift+L
+ * (kept consistent with each other, and distinguishing Shift+S from plain S's Step). Esc
+ * closes whichever overlay is topmost: the legend modal first, then (since exiting inspect
+ * mode already hides the inspector panel) inspect mode itself.
  */
 window.addEventListener('keydown', (event: KeyboardEvent) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -679,6 +680,7 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       else stepOnce();
       break;
     case 'KeyL':
+      if (!event.shiftKey) break;
       event.preventDefault();
       doLoad();
       break;
