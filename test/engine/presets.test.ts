@@ -72,12 +72,12 @@ describe('buildScenario', () => {
   it("scatters extraMinerals free-standing minerals for a preset that specifies them", () => {
     const preset = SCENARIO_PRESETS.find((p) => p.id === 'food-rich')!;
     const sim = buildScenario(preset, 40, 40);
-    expect(sim.grid.minerals().length).toBe(preset.extraMinerals);
+    expect(sim.grid.minerals()).toHaveLength(preset.extraMinerals!);
   });
 
   it('presets without extraMinerals seed none', () => {
     const preset = SCENARIO_PRESETS.find((p) => p.id === 'classic')!;
     const sim = buildScenario(preset, 40, 40);
-    expect(sim.grid.minerals().length).toBe(0);
+    expect(sim.grid.minerals()).toHaveLength(0);
   });
 });
