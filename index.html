@@ -8,7 +8,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2305070d'/%3E%3Ccircle cx='12' cy='13' r='6' fill='%233b82f6'/%3E%3Ccircle cx='20' cy='19' r='5' fill='%23ef4444'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23eab308'/%3E%3C/svg%3E"
     />
-    <script type="module" crossorigin src="./assets/index-K2pCD9t7.js"></script>
+    <script type="module" crossorigin src="./assets/index-woumx-pL.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CZDlAuCt.css">
   </head>
   <body>
@@ -120,14 +120,21 @@
           </div>
           <hr class="controls-menu-divider" />
           <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #eab308"></span>Scenario</div>
+            <div id="menu-scenario-list"></div>
+          </div>
+          <hr class="controls-menu-divider" />
+          <div class="controls-menu-group">
             <div class="controls-menu-group-title"><span class="dot" style="background: #4f8cff"></span>Save / Load</div>
-            <button type="button" class="controls-menu-row" id="menu-save-btn" role="menuitem" title="Save to this browser">
+            <button type="button" class="controls-menu-row" id="menu-save-btn" role="menuitem" title="Save to this browser (Shift+S)">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg>
               <span class="label">Save</span>
+              <kbd>Shift+S</kbd>
             </button>
-            <button type="button" class="controls-menu-row" id="menu-load-btn" role="menuitem" title="Load from this browser">
+            <button type="button" class="controls-menu-row" id="menu-load-btn" role="menuitem" title="Load from this browser (Shift+L)">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg>
               <span class="label">Load</span>
+              <kbd>Shift+L</kbd>
             </button>
             <button type="button" class="controls-menu-row" id="menu-export-btn" role="menuitem" title="Download a save file to share">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-download"></use></svg>
@@ -148,6 +155,8 @@
               <kbd>I</kbd><span>Inspect mode</span>
               <kbd>&minus; / =</kbd><span>Simulation speed</span>
               <kbd>[&nbsp;&nbsp;]</kbd><span>Paginate stats pages</span>
+              <kbd>Shift+S</kbd><span>Save</span>
+              <kbd>Shift+L</kbd><span>Load</span>
               <kbd>Esc</kbd><span>Close topmost overlay</span>
             </div>
           </div>
