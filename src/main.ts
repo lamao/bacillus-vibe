@@ -559,22 +559,17 @@ for (const preset of SCENARIO_PRESETS) {
 /**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
  * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
- * for sharing with someone else. All four close the popover, matching a one-shot menu action
- * rather than a toggle.
+ * for sharing with someone else. Save/Load are also reachable via the Shift+S/L hotkeys
+ * below, sharing these same functions. All four close the popover, matching a one-shot
+ * menu action rather than a toggle.
  */
-menuSaveBtn.addEventListener('click', () => {
+const doSave = (): void => {
   pendingExport = 'save';
   postToWorker({ type: 'exportState' });
   closeControlsMenu();
-});
+};
 
-menuExportBtn.addEventListener('click', () => {
-  pendingExport = 'download';
-  postToWorker({ type: 'exportState' });
-  closeControlsMenu();
-});
-
-menuLoadBtn.addEventListener('click', () => {
+const doLoad = (): void => {
   closeControlsMenu();
   loadQuickResume().then((state) => {
     if (!state) {
@@ -584,7 +579,17 @@ menuLoadBtn.addEventListener('click', () => {
     postToWorker({ type: 'importState', state });
     flashHint('Loaded');
   });
+};
+
+menuSaveBtn.addEventListener('click', doSave);
+
+menuExportBtn.addEventListener('click', () => {
+  pendingExport = 'download';
+  postToWorker({ type: 'exportState' });
+  closeControlsMenu();
 });
+
+menuLoadBtn.addEventListener('click', doLoad);
 
 menuImportBtn.addEventListener('click', () => {
   importFileInput.click();
@@ -647,11 +652,12 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
 });
 
 /**
- * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a modifier
- * key is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a
- * form control (there's currently only the speed slider, but this guards against future
- * text inputs too). Esc closes whichever overlay is topmost: the legend modal first, then
- * (since exiting inspect mode already hides the inspector panel) inspect mode itself.
+ * Global keyboard shortcuts for the footer/panel buttons above. Ignored while Ctrl/Cmd/Alt
+ * is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a form
+ * control (there's currently only the speed slider, but this guards against future text
+ * inputs too). Shift is not filtered out, since it's used to distinguish Shift+S (Save)
+ * from plain S (Step). Esc closes whichever overlay is topmost: the legend modal first,
+ * then (since exiting inspect mode already hides the inspector panel) inspect mode itself.
  */
 window.addEventListener('keydown', (event: KeyboardEvent) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -669,7 +675,12 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'KeyS':
       event.preventDefault();
-      stepOnce();
+      if (event.shiftKey) doSave();
+      else stepOnce();
+      break;
+    case 'KeyL':
+      event.preventDefault();
+      doLoad();
       break;
     case 'KeyA':
       event.preventDefault();
