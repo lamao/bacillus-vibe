@@ -651,17 +651,44 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   }
 });
 
+/** True while a shortcut-suppressing OS/browser modifier is held (so e.g. Cmd+A keeps working). */
+const hasBrowserModifier = (event: KeyboardEvent): boolean => event.ctrlKey || event.metaKey || event.altKey;
+
+/** Shift+S saves; plain S steps once (while paused) — both share the Controls menu's own doSave/stepOnce. */
+const handleKeyS = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doSave();
+  else stepOnce();
+};
+
+/** Only Shift+L loads — plain L isn't otherwise bound, so it's left alone rather than treated as a shortcut. */
+const handleKeyL = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doLoad();
+};
+
+const paginateStatsIfExpanded = (direction: number): void => {
+  if (statsDrawer.isExpanded()) statsDrawer.paginate(direction);
+};
+
+/** Esc closes whichever overlay is topmost: the legend modal first, then (since exiting inspect mode already hides the inspector panel) inspect mode itself. */
+const closeTopmostOverlay = (): void => {
+  if (!controlsMenuEl.classList.contains('hidden')) {
+    closeControlsMenu();
+  } else if (!iconLegendEl.classList.contains('hidden')) {
+    closeLegend();
+  } else if (inspectMode) {
+    exitInspectMode();
+  }
+};
+
 /**
- * Global keyboard shortcuts for the footer/panel buttons above. Ignored while Ctrl/Cmd/Alt
- * is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a form
- * control (there's currently only the speed slider, but this guards against future text
- * inputs too). Shift is not filtered out, since it's used for Save/Load's Shift+S/Shift+L
- * (kept consistent with each other, and distinguishing Shift+S from plain S's Step). Esc
- * closes whichever overlay is topmost: the legend modal first, then (since exiting inspect
- * mode already hides the inspector panel) inspect mode itself.
+ * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a browser
+ * modifier is held or while focus is on a form control (there's currently only the speed
+ * slider, but this guards against future text inputs too). Shift is not filtered out, since
+ * it's used for Save/Load's Shift+S/Shift+L (kept consistent with each other, and
+ * distinguishing Shift+S from plain S's Step).
  */
 window.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (hasBrowserModifier(event)) return;
   const target = event.target;
   if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
@@ -676,13 +703,11 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'KeyS':
       event.preventDefault();
-      if (event.shiftKey) doSave();
-      else stepOnce();
+      handleKeyS(event);
       break;
     case 'KeyL':
-      if (!event.shiftKey) break;
-      event.preventDefault();
-      doLoad();
+      if (event.shiftKey) event.preventDefault();
+      handleKeyL(event);
       break;
     case 'KeyA':
       event.preventDefault();
@@ -712,21 +737,15 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'BracketLeft':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(-1);
+      paginateStatsIfExpanded(-1);
       break;
     case 'BracketRight':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(1);
+      paginateStatsIfExpanded(1);
       break;
     case 'Escape':
       event.preventDefault();
-      if (!controlsMenuEl.classList.contains('hidden')) {
-        closeControlsMenu();
-      } else if (!iconLegendEl.classList.contains('hidden')) {
-        closeLegend();
-      } else if (inspectMode) {
-        exitInspectMode();
-      }
+      closeTopmostOverlay();
       break;
   }
 });
