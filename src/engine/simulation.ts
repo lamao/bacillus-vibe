@@ -12,7 +12,7 @@ import {
 } from './phases';
 import { RNG, SeededRNG } from './rng';
 import { Settings, defaultSettings } from './settings';
-import { DNA, Entity, Organic, Position } from './types';
+import { DNA, Entity, Mineral, Organic, Position, Substance } from './types';
 
 export interface TickResult {
   births: number;
@@ -55,7 +55,13 @@ export function tick(grid: Grid, settings: Settings, rng: RNG, nextId: () => num
 export class Simulation {
   readonly grid: Grid;
   readonly settings: Settings;
-  private readonly rng: RNG;
+  /**
+   * Exposed (not private) so callers that need to draw from the same deterministic
+   * stream as the simulation itself — e.g. scenario preset seeding (#32), which
+   * generates DNA outside of `spawnRandomOrganic`'s own `randomDNA` call — can do so
+   * without opening a second, independent RNG.
+   */
+  readonly rng: RNG;
   private idCounter = 0;
   tickCount = 0;
   /** Cumulative counts since the simulation started, for #40's Births & deaths tab (diffed client-side into a per-second rate, the same way as the header trend chevrons). */
@@ -90,6 +96,27 @@ export class Simulation {
   }
 
   spawnRandomOrganic(dna?: DNA): Organic | null {
+    const position = this.randomFreePosition();
+    if (!position) return null;
+    return this.spawnOrganicAt(position, dna);
+  }
+
+  spawnMineralAt(position: Position, substance: Substance, size: number): Mineral | null {
+    if (!this.grid.isFree(position.x, position.y)) return null;
+    const mineral: Mineral = { kind: 'mineral', position, size, substance };
+    this.grid.set(position.x, position.y, mineral);
+    return mineral;
+  }
+
+  /** Scatters one mineral of `substance`/`size` onto a random free cell; used by scenario presets (#32) to seed extra starting food. */
+  spawnRandomMineral(substance: Substance, size: number): Mineral | null {
+    const position = this.randomFreePosition();
+    if (!position) return null;
+    return this.spawnMineralAt(position, substance, size);
+  }
+
+  /** A uniformly random free cell, or null if the grid is full. */
+  private randomFreePosition(): Position | null {
     const free: Position[] = [];
     for (let y = 0; y < this.grid.height; y++) {
       for (let x = 0; x < this.grid.width; x++) {
@@ -97,8 +124,7 @@ export class Simulation {
       }
     }
     if (free.length === 0) return null;
-    const position = free[Math.floor(this.rng.next() * free.length)];
-    return this.spawnOrganicAt(position, dna);
+    return free[Math.floor(this.rng.next() * free.length)];
   }
 
   step(): void {

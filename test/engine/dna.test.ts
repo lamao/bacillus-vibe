@@ -4,6 +4,7 @@ import {
   mutateDNA,
   randomConsumeSubstance,
   randomDNA,
+  randomInstructionMatrix,
   randomPhysicalSubstance,
   starterInstructionMatrix,
 } from '../../src/engine/dna';
@@ -35,6 +36,34 @@ describe('randomDNA', () => {
     expect(d.produce).toBeDefined();
     expect(d.toxin).toBeDefined();
     expect(d.behavior).toEqual(starterInstructionMatrix());
+  });
+
+  it('uses a given behavior matrix instead of the starter one, when passed explicitly', () => {
+    const rng = new MockRNG([0.1, 0.2, 0.3, 0.4]);
+    const customBehavior = randomInstructionMatrix(new MockRNG([0.5]));
+    const d = randomDNA(rng, customBehavior);
+    expect(d.behavior).toBe(customBehavior);
+  });
+});
+
+describe('randomInstructionMatrix', () => {
+  it('produces a full 25-state matrix of well-formed instructions', () => {
+    const rng = new MockRNG([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]);
+    const matrix = randomInstructionMatrix(rng);
+    expect(matrix).toHaveLength(INSTRUCTION_MATRIX_SIZE);
+    for (const instruction of matrix) {
+      expect(instruction.action).toBeDefined();
+      expect(['<', '>=']).toContain(instruction.comparator);
+      expect(Number.isFinite(instruction.threshold)).toBe(true);
+      expect(Number.isInteger(instruction.jumpOffset)).toBe(true);
+    }
+  });
+
+  it('returns a fresh matrix each call, not a shared mutable reference', () => {
+    const a = randomInstructionMatrix(new MockRNG([0.1, 0.2, 0.3]));
+    const b = randomInstructionMatrix(new MockRNG([0.1, 0.2, 0.3]));
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
   });
 });
 

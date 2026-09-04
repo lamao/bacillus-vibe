@@ -10,6 +10,7 @@ import {
   Substance,
   substanceOf,
 } from './engine/types';
+import { SCENARIO_PRESETS } from './engine/presets';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
@@ -221,6 +222,10 @@ const ICON_DEFS_SVG = `
       <path d="M12 15 V4 M8 8 L12 4 L16 8" />
       <path d="M4.5 17 V18.5 A1 1 0 0 0 5.5 19.5 H18.5 A1 1 0 0 0 19.5 18.5 V17" />
     </symbol>
+    <symbol id="ic-flask" viewBox="0 0 24 24">
+      <path d="M9.5 3.5 H14.5 M10.2 3.5 V9.2 L4.9 18.4 A1.4 1.4 0 0 0 6.1 20.5 H17.9 A1.4 1.4 0 0 0 19.1 18.4 L13.8 9.2 V3.5" />
+      <path d="M7.7 15 H16.3" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -278,6 +283,7 @@ const controlsMenuBtn = document.querySelector<HTMLButtonElement>('#controls-men
 const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
+const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
 const menuSaveBtn = document.querySelector<HTMLButtonElement>('#menu-save-btn');
 const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
@@ -309,6 +315,7 @@ if (
   !controlsMenuEl ||
   !menuDrawerToggle ||
   !menuLegendToggle ||
+  !menuScenarioListEl ||
   !menuSaveBtn ||
   !menuLoadBtn ||
   !menuExportBtn ||
@@ -524,24 +531,45 @@ const flashHint = (message: string): void => {
 };
 
 /**
+ * Scenario presets (#32): each row applies a named settings bundle + seeding recipe
+ * (`src/engine/presets.ts`), replacing the running simulation wholesale — same one-shot
+ * "act immediately, no confirmation" pattern as Save/Load below. Built from
+ * `SCENARIO_PRESETS` rather than hand-written per preset, so this list and the engine's
+ * stay in sync automatically.
+ */
+for (const preset of SCENARIO_PRESETS) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitem');
+  row.title = preset.description;
+  row.appendChild(buildIcon('ic-flask', 'btn-icon'));
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = preset.name;
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    postToWorker({ type: 'applyPreset', presetId: preset.id });
+    flashHint(`Scenario: ${preset.name}`);
+    closeControlsMenu();
+  });
+  menuScenarioListEl.appendChild(row);
+}
+
+/**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
  * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
- * for sharing with someone else. All four close the popover, matching a one-shot menu action
- * rather than a toggle.
+ * for sharing with someone else. Save/Load are also reachable via the Shift+S/L hotkeys
+ * below, sharing these same functions. All four close the popover, matching a one-shot
+ * menu action rather than a toggle.
  */
-menuSaveBtn.addEventListener('click', () => {
+const doSave = (): void => {
   pendingExport = 'save';
   postToWorker({ type: 'exportState' });
   closeControlsMenu();
-});
+};
 
-menuExportBtn.addEventListener('click', () => {
-  pendingExport = 'download';
-  postToWorker({ type: 'exportState' });
-  closeControlsMenu();
-});
-
-menuLoadBtn.addEventListener('click', () => {
+const doLoad = (): void => {
   closeControlsMenu();
   loadQuickResume().then((state) => {
     if (!state) {
@@ -551,7 +579,17 @@ menuLoadBtn.addEventListener('click', () => {
     postToWorker({ type: 'importState', state });
     flashHint('Loaded');
   });
+};
+
+menuSaveBtn.addEventListener('click', doSave);
+
+menuExportBtn.addEventListener('click', () => {
+  pendingExport = 'download';
+  postToWorker({ type: 'exportState' });
+  closeControlsMenu();
 });
+
+menuLoadBtn.addEventListener('click', doLoad);
 
 menuImportBtn.addEventListener('click', () => {
   importFileInput.click();
@@ -613,15 +651,44 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   }
 });
 
+/** True while a shortcut-suppressing OS/browser modifier is held (so e.g. Cmd+A keeps working). */
+const hasBrowserModifier = (event: KeyboardEvent): boolean => event.ctrlKey || event.metaKey || event.altKey;
+
+/** Shift+S saves; plain S steps once (while paused) — both share the Controls menu's own doSave/stepOnce. */
+const handleKeyS = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doSave();
+  else stepOnce();
+};
+
+/** Only Shift+L loads — plain L isn't otherwise bound, so it's left alone rather than treated as a shortcut. */
+const handleKeyL = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doLoad();
+};
+
+const paginateStatsIfExpanded = (direction: number): void => {
+  if (statsDrawer.isExpanded()) statsDrawer.paginate(direction);
+};
+
+/** Esc closes whichever overlay is topmost: the legend modal first, then (since exiting inspect mode already hides the inspector panel) inspect mode itself. */
+const closeTopmostOverlay = (): void => {
+  if (!controlsMenuEl.classList.contains('hidden')) {
+    closeControlsMenu();
+  } else if (!iconLegendEl.classList.contains('hidden')) {
+    closeLegend();
+  } else if (inspectMode) {
+    exitInspectMode();
+  }
+};
+
 /**
- * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a modifier
- * key is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a
- * form control (there's currently only the speed slider, but this guards against future
- * text inputs too). Esc closes whichever overlay is topmost: the legend modal first, then
- * (since exiting inspect mode already hides the inspector panel) inspect mode itself.
+ * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a browser
+ * modifier is held or while focus is on a form control (there's currently only the speed
+ * slider, but this guards against future text inputs too). Shift is not filtered out, since
+ * it's used for Save/Load's Shift+S/Shift+L (kept consistent with each other, and
+ * distinguishing Shift+S from plain S's Step).
  */
 window.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (hasBrowserModifier(event)) return;
   const target = event.target;
   if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
@@ -636,7 +703,11 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'KeyS':
       event.preventDefault();
-      stepOnce();
+      handleKeyS(event);
+      break;
+    case 'KeyL':
+      if (event.shiftKey) event.preventDefault();
+      handleKeyL(event);
       break;
     case 'KeyA':
       event.preventDefault();
@@ -666,21 +737,15 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'BracketLeft':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(-1);
+      paginateStatsIfExpanded(-1);
       break;
     case 'BracketRight':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(1);
+      paginateStatsIfExpanded(1);
       break;
     case 'Escape':
       event.preventDefault();
-      if (!controlsMenuEl.classList.contains('hidden')) {
-        closeControlsMenu();
-      } else if (!iconLegendEl.classList.contains('hidden')) {
-        closeLegend();
-      } else if (inspectMode) {
-        exitInspectMode();
-      }
+      closeTopmostOverlay();
       break;
   }
 });

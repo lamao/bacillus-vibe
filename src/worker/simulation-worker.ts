@@ -1,3 +1,4 @@
+import { SCENARIO_PRESETS, buildScenario } from '../engine/presets';
 import { SeededRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
@@ -88,6 +89,17 @@ self.onmessage = (event: MessageEvent) => {
       postSettings();
       postSnapshot();
       break;
+    case 'applyPreset': {
+      const preset = SCENARIO_PRESETS.find((p) => p.id === message.presetId);
+      if (!preset) break;
+      simulation = buildScenario(preset);
+      settings = simulation.settings;
+      // Same reasoning as 'importState': the old backlog belonged to the replaced simulation.
+      tickAccumulator = 0;
+      postSettings();
+      postSnapshot();
+      break;
+    }
   }
 };
 
