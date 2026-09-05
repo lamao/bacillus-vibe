@@ -305,7 +305,7 @@ export function reproduce(grid: Grid, settings: Settings, rng: RNG, nextId: () =
         direction: null,
         age: 0,
         accumulatedWaste: 0,
-        dna: mutateDNA(parent.dna, rng, settings.mutationRate),
+        dna: mutateDNA(parent.dna, rng, settings.mutationRate, settings.behaviorMutationRatio),
         currentState: 0,
         chosenAction: null,
       };

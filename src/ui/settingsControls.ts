@@ -22,24 +22,37 @@ const multiplier = (value: number): string => `${value.toFixed(2)}x`;
 /**
  * One control per live-tunable `Settings` field, grouped for the panel and given a
  * slider range wide enough to explore extremes without making the default sit at an
- * unreadable edge. `mutationRate` gets its own group and the finest step, per #31's
- * primary motivation of balancing mutation-driven adaptation by feel.
+ * unreadable edge. `mutationRate` and `behaviorMutationRatio` get their own group and
+ * the finest step, per #31's primary motivation of balancing mutation-driven
+ * adaptation by feel: `mutateDNA` (`engine/dna.ts`) picks a mutation's category
+ * (behavior vs. the point traits as a group) via `behaviorMutationRatio` before
+ * picking which variable within that category changes, so raising the ratio drives
+ * faster behavioral adaptation without also speeding up point-trait mutation.
  *
- * Per-trait mutation rates (also raised in #31) were considered and dropped: `mutateDNA`
- * already treats all traits as equally likely once a mutation roll succeeds (see
- * `MUTATABLE_TRAITS` in `engine/dna.ts`), and splitting that into per-trait rates would
- * change the DNA model itself, not just expose an existing constant — out of scope for
- * a settings-exposure panel.
+ * Separate rates per individual point trait (body/consume/produce/toxin each tuned
+ * independently) were considered and dropped: they'd still change the DNA model
+ * itself for a finer grain than #31 asked for — the category-level split above
+ * already covers the "how do I make behavior mutate faster" motivation.
  */
 export const SETTING_CONTROL_SPECS: readonly SettingControlSpec[] = [
   {
     key: 'mutationRate',
     label: 'Mutation rate',
-    description: 'Probability a single DNA trait mutates on reproduction.',
+    description: 'Probability a mutation happens at all on reproduction.',
     group: 'Mutation',
     min: 0,
     max: 0.5,
     step: 0.001,
+    format: percent,
+  },
+  {
+    key: 'behaviorMutationRatio',
+    label: 'Behavior mutation ratio',
+    description: 'Given a mutation happens, the chance it targets behavior rather than a point trait (body/consume/produce/toxin).',
+    group: 'Mutation',
+    min: 0,
+    max: 1,
+    step: 0.01,
     format: percent,
   },
   {

@@ -34,8 +34,14 @@ export interface Settings {
   toxinRange: number;
   /** Radius offspring can be placed at, relative to parent. */
   reproductionRange: number;
-  /** Probability a single DNA trait mutates on reproduction. */
+  /** Probability a mutation happens at all on reproduction. */
   mutationRate: number;
+  /**
+   * Given a mutation happens, the probability it targets the behavior/instruction
+   * matrix rather than one of the point traits (body/consume/produce/toxin). The
+   * remaining `1 - behaviorMutationRatio` is split evenly across the 4 point traits.
+   */
+  behaviorMutationRatio: number;
   /** Fraction of the would-be offspring's energy refunded to the parent if reproduction can't place the offspring. */
   returnHealthWhenReproductionFails: number;
   /**
@@ -80,6 +86,9 @@ export function defaultSettings(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     toxinRange: 2,
     reproductionRange: 1,
     mutationRate: 0.01,
+    // Reproduces the old flat "1 of 5 traits, equal odds" split exactly: 20% behavior,
+    // 80% split evenly across the 4 point traits also comes out to 20% each.
+    behaviorMutationRatio: 0.2,
     returnHealthWhenReproductionFails: 0.5,
     wasteIntoxicationFactor: 1,
   };

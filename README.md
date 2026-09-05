@@ -143,7 +143,8 @@ requiring a rebuild.
 | `productionRange` | 1 | radius for depositing waste as minerals |
 | `toxinRange` | 2 | radius within which toxin sources damage a cell |
 | `reproductionRange` | 1 | radius offspring can be placed at, relative to parent |
-| `mutationRate` | 0.01 | probability a single DNA trait mutates on reproduction |
+| `mutationRate` | 0.01 | probability a mutation happens at all on reproduction |
+| `behaviorMutationRatio` | 0.2 | given a mutation happens, probability it targets behavior rather than a point trait (see mutation model below) |
 | `returnHealthWhenReproductionFails` | 0.5 | fraction of spent energy refunded if reproduction can't place the offspring |
 | `wasteIntoxicationFactor` | 1 | multiplier on self-damage from waste an organic tried to Release but had no room to place (0 disables it) |
 
@@ -170,14 +171,22 @@ inclusive (a cell is "in range" when its distance is `<= range`).
 - **Newborn organics** start at `energy == size` (full tank) — the spec
   doesn't say explicitly, but "DefaultSize... starting size" reads most
   naturally as a full starting reserve.
-- **One global `mutationRate` rather than per-trait rates** (#31 explicitly
-  raised this as an open question): `mutateDNA` already treats every
-  mutatable trait as equally likely to be the one that mutates once a
-  single `mutationRate` roll succeeds. Splitting that into a rate per trait
-  would change the DNA mutation model itself — a bigger, separate design
-  decision — not just expose an existing constant, which is what #31's
-  live-tuning panel is scoped to do. Kept as one global rate; the panel
-  makes it fast to explore anyway.
+- **Mutation is a two-step choice: category, then variable** (#31 explicitly
+  raised whether per-trait rates make more sense than one global rate).
+  `mutateDNA` (`engine/dna.ts`) first rolls `mutationRate` (does a mutation
+  happen at all this reproduction), then — only if it does — rolls
+  `behaviorMutationRatio` to decide the mutation's *category*: the
+  behavior/instruction matrix, or the 4 point traits (body/consume/produce/
+  toxin) as a group; only then is the specific variable within that
+  category picked uniformly at random (one point trait, or one instruction-
+  matrix state + mutation operator). This makes behavioral adaptation speed
+  independently tunable from point-trait mutation, without needing a
+  separate rate per individual point trait — which was considered and
+  dropped as a finer grain than #31 asked for, and a bigger change to the
+  DNA model itself. `behaviorMutationRatio` defaults to 0.2, which
+  reproduces the original "1 of 5 traits, equal odds" split exactly (20%
+  behavior, 80% split evenly across 4 point traits is also 20% each) —
+  the live-tuning panel is where this actually gets explored.
 
 ### Instruction-matrix findings (#12)
 
