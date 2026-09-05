@@ -273,6 +273,7 @@ const pauseIconUse = document.querySelector<SVGUseElement>('#pause-icon-use');
 const ticBtn = document.querySelector<HTMLButtonElement>('#tic-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
+const settingsBtn = document.querySelector<HTMLButtonElement>('#settings-btn');
 const inspectorEl = document.querySelector<HTMLElement>('#inspector');
 const inspectorContentEl = document.querySelector<HTMLElement>('#inspector-content');
 const inspectorCloseBtn = document.querySelector<HTMLButtonElement>('#inspector-close');
@@ -292,7 +293,6 @@ const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
 const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
-const menuSettingsBtn = document.querySelector<HTMLButtonElement>('#menu-settings-btn');
 const settingsPanelEl = document.querySelector<HTMLElement>('#settings-panel');
 const settingsPanelBackdropEl = document.querySelector<HTMLElement>('#settings-panel-backdrop');
 const settingsPanelCloseBtn = document.querySelector<HTMLButtonElement>('#settings-panel-close');
@@ -311,6 +311,7 @@ if (
   !ticBtn ||
   !addBtn ||
   !inspectBtn ||
+  !settingsBtn ||
   !inspectorEl ||
   !inspectorContentEl ||
   !inspectorCloseBtn ||
@@ -330,7 +331,6 @@ if (
   !menuDrawerToggle ||
   !menuLegendToggle ||
   !menuScenarioListEl ||
-  !menuSettingsBtn ||
   !settingsPanelEl ||
   !settingsPanelBackdropEl ||
   !settingsPanelCloseBtn ||
@@ -663,16 +663,20 @@ function syncSettingsPanel(settings: Settings): void {
 
 const closeSettingsPanel = (): void => {
   settingsPanelEl.classList.add('hidden');
+  settingsBtn.setAttribute('aria-pressed', 'false');
 };
 
 const openSettingsPanel = (): void => {
   settingsPanelEl.classList.remove('hidden');
+  settingsBtn.setAttribute('aria-pressed', 'true');
 };
 
-menuSettingsBtn.addEventListener('click', () => {
-  openSettingsPanel();
-  closeControlsMenu();
-});
+const toggleSettingsPanel = (): void => {
+  if (settingsPanelEl.classList.contains('hidden')) openSettingsPanel();
+  else closeSettingsPanel();
+};
+
+settingsBtn.addEventListener('click', toggleSettingsPanel);
 settingsPanelCloseBtn.addEventListener('click', closeSettingsPanel);
 settingsPanelBackdropEl.addEventListener('click', closeSettingsPanel);
 
@@ -844,6 +848,10 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     case 'KeyI':
       event.preventDefault();
       toggleInspectMode();
+      break;
+    case 'KeyG':
+      event.preventDefault();
+      toggleSettingsPanel();
       break;
     case 'Equal':
       event.preventDefault();

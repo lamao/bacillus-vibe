@@ -93,7 +93,7 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   engine's preset list can't drift apart — picking one posts an
   `applyPreset` message that replaces the worker's running `Simulation`
   wholesale, the same "act immediately, no confirmation" pattern as Load;
-  and the Controls menu's Settings group (#31), which opens a live-tuning
+  and a standalone footer gear button (#31, `G`) that opens a live-tuning
   panel built from `ui/settingsControls.ts`'s `SETTING_CONTROL_SPECS` (one
   slider per tunable `Settings` field, grouped, `width`/`height` excluded
   since those require rebuilding the grid rather than swapping a value) —
@@ -145,6 +145,7 @@ requiring a rebuild.
 | `reproductionRange` | 1 | radius offspring can be placed at, relative to parent |
 | `mutationRate` | 0.01 | probability a single DNA trait mutates on reproduction |
 | `returnHealthWhenReproductionFails` | 0.5 | fraction of spent energy refunded if reproduction can't place the offspring |
+| `wasteIntoxicationFactor` | 1 | multiplier on self-damage from waste an organic tried to Release but had no room to place (0 disables it) |
 
 All range checks use Chebyshev distance (`max(|dx|,|dy|)`) and are
 inclusive (a cell is "in range" when its distance is `<= range`).

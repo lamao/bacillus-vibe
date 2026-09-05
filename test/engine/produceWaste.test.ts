@@ -100,6 +100,31 @@ describe('produceWaste (phase 5)', () => {
     expect(o.accumulatedWaste).toBe(0);
   });
 
+  it('scales self-poisoning by wasteIntoxicationFactor', () => {
+    const settings = testSettings({ productionRange: 1, wasteIntoxicationFactor: 2 });
+    const grid = emptyGrid(settings);
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
+    place(grid, o);
+    for (const p of grid.positionsInRange(5, 5, 1)) {
+      place(grid, organic(p, { dna: dna({ body: 'Red' }) }));
+    }
+    produceWaste(grid, settings);
+    expect(o.energy).toBe(400); // 50 unplaced * 2x factor
+  });
+
+  it('disables self-poisoning entirely when wasteIntoxicationFactor is 0', () => {
+    const settings = testSettings({ productionRange: 1, wasteIntoxicationFactor: 0 });
+    const grid = emptyGrid(settings);
+    const o = organic({ x: 5, y: 5 }, { accumulatedWaste: 50, dna: dna({ produce: 'Yellow' }), energy: 500, chosenAction: release });
+    place(grid, o);
+    for (const p of grid.positionsInRange(5, 5, 1)) {
+      place(grid, organic(p, { dna: dna({ body: 'Red' }) }));
+    }
+    produceWaste(grid, settings);
+    expect(o.energy).toBe(500);
+    expect(o.accumulatedWaste).toBe(0);
+  });
+
   it('partially fills one new mineral (capped at maxSize) then self-poisons with the rest', () => {
     const settings = testSettings({ productionRange: 1, maxSize: 30 });
     const grid = emptyGrid(settings);

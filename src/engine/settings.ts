@@ -38,6 +38,13 @@ export interface Settings {
   mutationRate: number;
   /** Fraction of the would-be offspring's energy refunded to the parent if reproduction can't place the offspring. */
   returnHealthWhenReproductionFails: number;
+  /**
+   * Multiplier on the self-damage an organic takes from waste it chose to Release but
+   * couldn't place anywhere (no matching mineral with room, no free cell in range): at
+   * the default of 1, each unplaced unit of waste costs exactly 1 energy, same as before
+   * this was made tunable.
+   */
+  wasteIntoxicationFactor: number;
 }
 
 /**
@@ -74,5 +81,6 @@ export function defaultSettings(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     reproductionRange: 1,
     mutationRate: 0.01,
     returnHealthWhenReproductionFails: 0.5,
+    wasteIntoxicationFactor: 1,
   };
 }

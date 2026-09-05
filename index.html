@@ -94,6 +94,9 @@
         <button id="inspect-btn" type="button" class="icon-btn" aria-pressed="false" title="Inspect cells on the grid (I)">
           <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"></use></svg>
         </button>
+        <button id="settings-btn" type="button" class="icon-btn" aria-pressed="false" title="Live-tune engine settings (G)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg>
+        </button>
         <label class="speed-control" title="Change simulation speed (- / =)">
           <svg class="btn-icon speed-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-speed"></use></svg>
           <input id="speed" type="range" min="0" max="11" step="1" value="6" aria-label="Simulation speed" />
@@ -134,14 +137,6 @@
           </div>
           <hr class="controls-menu-divider" />
           <div class="controls-menu-group">
-            <div class="controls-menu-group-title"><span class="dot" style="background: #ef4444"></span>Settings</div>
-            <button type="button" class="controls-menu-row" id="menu-settings-btn" role="menuitem" title="Live-tune engine settings">
-              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg>
-              <span class="label">Engine settings</span>
-            </button>
-          </div>
-          <hr class="controls-menu-divider" />
-          <div class="controls-menu-group">
             <div class="controls-menu-group-title"><span class="dot" style="background: #4f8cff"></span>Save / Load</div>
             <button type="button" class="controls-menu-row" id="menu-save-btn" role="menuitem" title="Save to this browser (Shift+S)">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg>
@@ -170,6 +165,7 @@
               <kbd>S</kbd><span>Step one tick (while paused)</span>
               <kbd>A</kbd><span>Add creature</span>
               <kbd>I</kbd><span>Inspect mode</span>
+              <kbd>G</kbd><span>Engine settings panel</span>
               <kbd>&minus; / =</kbd><span>Simulation speed</span>
               <kbd>[&nbsp;&nbsp;]</kbd><span>Paginate stats pages</span>
               <kbd>Shift+S</kbd><span>Save</span>

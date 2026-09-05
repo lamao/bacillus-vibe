@@ -17,6 +17,7 @@ export interface SettingControlSpec {
 
 const plain = (value: number): string => Number(value.toFixed(3)).toString();
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
+const multiplier = (value: number): string => `${value.toFixed(2)}x`;
 
 /**
  * One control per live-tunable `Settings` field, grouped for the panel and given a
@@ -160,6 +161,16 @@ export const SETTING_CONTROL_SPECS: readonly SettingControlSpec[] = [
     max: 1,
     step: 0.01,
     format: percent,
+  },
+  {
+    key: 'wasteIntoxicationFactor',
+    label: 'Waste intoxication',
+    description: "Self-damage multiplier for waste an organic tried to Release but had no room to place — 0 disables it, 1 is the original 1:1 cost.",
+    group: 'Energy & growth',
+    min: 0,
+    max: 3,
+    step: 0.05,
+    format: multiplier,
   },
   {
     key: 'visionRange',

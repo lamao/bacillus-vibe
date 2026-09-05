@@ -355,9 +355,9 @@ export function consume(grid: Grid, settings: Settings): void {
  * Phase 5: organics whose chosen action this tick was `Produce` (Release) try to
  * dump their accumulated waste within ProductionRange, topping up matching
  * minerals first, then creating new ones in free cells. Waste that still can't
- * be placed poisons the organic directly. Organics that chose `Produce` (Hold),
- * or any other action, keep hoarding: their waste stays accumulated for a later
- * Release tick.
+ * be placed poisons the organic directly, scaled by `wasteIntoxicationFactor`.
+ * Organics that chose `Produce` (Hold), or any other action, keep hoarding: their
+ * waste stays accumulated for a later Release tick.
  */
 export function produceWaste(grid: Grid, settings: Settings): void {
   for (const organic of grid.organics()) {
@@ -398,7 +398,7 @@ export function produceWaste(grid: Grid, settings: Settings): void {
     }
 
     if (remaining > 0) {
-      organic.energy -= remaining;
+      organic.energy -= remaining * settings.wasteIntoxicationFactor;
     }
     organic.accumulatedWaste = 0;
   }
