@@ -34,11 +34,32 @@ export interface Settings {
   toxinRange: number;
   /** Radius offspring can be placed at, relative to parent. */
   reproductionRange: number;
-  /** Probability a single DNA trait mutates on reproduction. */
+  /** Probability a mutation happens at all on reproduction. */
   mutationRate: number;
+  /**
+   * Given a mutation happens, the probability it targets the behavior/instruction
+   * matrix rather than one of the point traits (body/consume/produce/toxin). The
+   * remaining `1 - behaviorMutationRatio` is split evenly across the 4 point traits.
+   */
+  behaviorMutationRatio: number;
   /** Fraction of the would-be offspring's energy refunded to the parent if reproduction can't place the offspring. */
   returnHealthWhenReproductionFails: number;
+  /**
+   * Multiplier on the self-damage an organic takes from waste it chose to Release but
+   * couldn't place anywhere (no matching mineral with room, no free cell in range): at
+   * the default of 1, each unplaced unit of waste costs exactly 1 energy, same as before
+   * this was made tunable.
+   */
+  wasteIntoxicationFactor: number;
 }
+
+/**
+ * Settings fields safe to change on a running simulation (#31's live tuning panel).
+ * `width`/`height` are excluded — changing grid dimensions means rebuilding the grid,
+ * not swapping a value on the existing one.
+ */
+export type TunableSettingKey = Exclude<keyof Settings, 'width' | 'height'>;
+export type TunableSettings = Pick<Settings, TunableSettingKey>;
 
 export const DEFAULT_GRID_SIZE = 80;
 
@@ -65,6 +86,10 @@ export function defaultSettings(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     toxinRange: 2,
     reproductionRange: 1,
     mutationRate: 0.01,
+    // Reproduces the old flat "1 of 5 traits, equal odds" split exactly: 20% behavior,
+    // 80% split evenly across the 4 point traits also comes out to 20% each.
+    behaviorMutationRatio: 0.2,
     returnHealthWhenReproductionFails: 0.5,
+    wasteIntoxicationFactor: 1,
   };
 }

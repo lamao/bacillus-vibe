@@ -827,6 +827,76 @@ footer#controls #controls-menu-btn {
   color: var(--muted);
 }
 
+.settings-panel-panel {
+  width: min(420px, calc(100% - 2rem));
+}
+
+.settings-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.settings-group-title {
+  margin-bottom: 0.4rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-row {
+  padding: 0.4rem 0;
+}
+
+.settings-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.settings-row-value {
+  flex: none;
+  min-width: 3.6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.settings-row-desc {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.settings-row input[type='range'] {
+  width: 100%;
+}
+
+.settings-panel-actions {
+  margin-top: 1.1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-reset-btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+}
+
+.settings-reset-btn:hover {
+  border-color: var(--accent);
+}
+
 /* Grouped popover (#71) anchored above the footer's Controls button, holding
    everything that was previously hotkey-only with no visible affordance. */
 .controls-menu {

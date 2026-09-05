@@ -106,8 +106,9 @@ describe('reproduce (phase 3)', () => {
     const parent = organic({ x: 5, y: 5 }, { energy: 2000, size: 1000, dna: dna({ body: 'Blue' }), chosenAction: split });
     place(grid, parent);
     // spent=0.5->750; offset=0.5->(1,0); mutation roll 0 (< rate 1) -> mutate;
+    // category roll 0.5 (default behaviorMutationRatio=0.2, 0.5 >= 0.2 -> point-trait branch);
     // trait pick 0 -> 'body'; substance pick 0.3 -> 'Green' (differs from parent's 'Blue')
-    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0, 0, 0.3]), idGen());
+    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0, 0.5, 0, 0.3]), idGen());
 
     const offspring = grid.get(6, 5);
     expect(offspring?.kind).toBe('organic');
