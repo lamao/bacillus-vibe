@@ -1,4 +1,5 @@
 import { SimulationState } from '../engine/simulation';
+import { Settings, TunableSettings } from '../engine/settings';
 import { GridView, Position } from '../engine/types';
 
 /**
@@ -26,7 +27,8 @@ export type WorkerRequest =
   | { type: 'stepOnce' }
   | { type: 'exportState' }
   | { type: 'importState'; state: SimulationState }
-  | { type: 'applyPreset'; presetId: string };
+  | { type: 'applyPreset'; presetId: string }
+  | { type: 'updateSettings'; settings: Partial<TunableSettings> };
 
 /**
  * A snapshot of the simulation's grid, posted from the worker once per
@@ -42,15 +44,15 @@ export interface SimulationSnapshot extends GridView {
 }
 
 /**
- * The two Settings fields the Averages tab needs to turn an organic's raw age/size into
- * the same 0-1 ratios its own instruction-matrix sensors read (see engine/phases.ts's
- * evaluateSensor). Settings never changes after the worker starts, so this is posted
- * once up front rather than repeated on every SimulationSnapshot.
+ * The current engine Settings, posted once up front, again after any wholesale
+ * replacement (`importState`/`applyPreset`), and again after a live `updateSettings`
+ * edit — rather than repeated on every SimulationSnapshot. The main thread uses
+ * `maxAge`/`maxSize` for the Averages tab's 0-1 ratios (see engine/phases.ts's
+ * evaluateSensor) and the full object to keep the live-tuning panel's sliders in sync.
  */
 export interface WorkerSettings {
   type: 'settings';
-  maxAge: number;
-  maxSize: number;
+  settings: Settings;
 }
 
 /** Reply to an `exportState` request, carrying a full save/load snapshot (#29) of the running simulation. */

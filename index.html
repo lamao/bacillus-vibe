@@ -68,6 +68,17 @@
               <div id="icon-legend-content"></div>
             </div>
           </div>
+          <div id="settings-panel" class="icon-legend hidden">
+            <div id="settings-panel-backdrop" class="icon-legend-backdrop"></div>
+            <div class="icon-legend-panel settings-panel-panel" role="dialog" aria-modal="true" aria-label="Engine settings">
+              <button id="settings-panel-close" type="button" class="icon-legend-close" aria-label="Close settings" title="Close settings (Esc)">&times;</button>
+              <h2 class="icon-legend-title">Engine settings</h2>
+              <div id="settings-panel-content"></div>
+              <div class="settings-panel-actions">
+                <button id="settings-reset-btn" type="button" class="settings-reset-btn">Reset to defaults</button>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
       <footer id="controls">
@@ -120,6 +131,14 @@
           <div class="controls-menu-group">
             <div class="controls-menu-group-title"><span class="dot" style="background: #eab308"></span>Scenario</div>
             <div id="menu-scenario-list"></div>
+          </div>
+          <hr class="controls-menu-divider" />
+          <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #ef4444"></span>Settings</div>
+            <button type="button" class="controls-menu-row" id="menu-settings-btn" role="menuitem" title="Live-tune engine settings">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg>
+              <span class="label">Engine settings</span>
+            </button>
           </div>
           <hr class="controls-menu-divider" />
           <div class="controls-menu-group">

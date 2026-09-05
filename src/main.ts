@@ -11,9 +11,11 @@ import {
   substanceOf,
 } from './engine/types';
 import { SCENARIO_PRESETS } from './engine/presets';
+import { Settings, TunableSettingKey } from './engine/settings';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
 import { computeTrend, Trend } from './ui/trend';
@@ -226,6 +228,12 @@ const ICON_DEFS_SVG = `
       <path d="M9.5 3.5 H14.5 M10.2 3.5 V9.2 L4.9 18.4 A1.4 1.4 0 0 0 6.1 20.5 H17.9 A1.4 1.4 0 0 0 19.1 18.4 L13.8 9.2 V3.5" />
       <path d="M7.7 15 H16.3" />
     </symbol>
+    <symbol id="ic-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 4.5 V6.5 M12 17.5 V19.5 M4.5 12 H6.5 M17.5 12 H19.5 M6.5 6.5 L8 8 M16 16 L17.5 17.5 M17.5 6.5 L16 8 M8 16 L6.5 17.5"
+      />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -284,6 +292,12 @@ const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
 const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
+const menuSettingsBtn = document.querySelector<HTMLButtonElement>('#menu-settings-btn');
+const settingsPanelEl = document.querySelector<HTMLElement>('#settings-panel');
+const settingsPanelBackdropEl = document.querySelector<HTMLElement>('#settings-panel-backdrop');
+const settingsPanelCloseBtn = document.querySelector<HTMLButtonElement>('#settings-panel-close');
+const settingsPanelContentEl = document.querySelector<HTMLElement>('#settings-panel-content');
+const settingsResetBtn = document.querySelector<HTMLButtonElement>('#settings-reset-btn');
 const menuSaveBtn = document.querySelector<HTMLButtonElement>('#menu-save-btn');
 const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
@@ -316,6 +330,12 @@ if (
   !menuDrawerToggle ||
   !menuLegendToggle ||
   !menuScenarioListEl ||
+  !menuSettingsBtn ||
+  !settingsPanelEl ||
+  !settingsPanelBackdropEl ||
+  !settingsPanelCloseBtn ||
+  !settingsPanelContentEl ||
+  !settingsResetBtn ||
   !menuSaveBtn ||
   !menuLoadBtn ||
   !menuExportBtn ||
@@ -341,15 +361,20 @@ let latestSnapshot: SimulationSnapshot | null = null;
 let entityByPosition = new Map<string, Entity>();
 /** Id-keyed index of organics only (minerals have no stable id), so the inspector can keep following an organic as it moves. */
 let organicById = new Map<number, Organic>();
-/** Settings only changes wholesale on an import (#29), so this is refreshed from the worker's 'settings' message rather than resent with every snapshot. */
-let engineSettings: { maxAge: number; maxSize: number } | null = null;
+/**
+ * Refreshed from the worker's 'settings' message: on startup, after a wholesale
+ * replacement (import/scenario preset), and after a live edit via the settings panel
+ * below (#31) — rather than resent with every snapshot.
+ */
+let engineSettings: Settings | null = null;
 /** Which action a pending 'exportState' round-trip is for — the worker's reply is generic, so this remembers what to do once it arrives. */
 let pendingExport: 'save' | 'download' | null = null;
 
 worker.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerResponse;
   if (message.type === 'settings') {
-    engineSettings = { maxAge: message.maxAge, maxSize: message.maxSize };
+    engineSettings = message.settings;
+    syncSettingsPanel(message.settings);
     return;
   }
   if (message.type === 'exportedState') {
@@ -557,6 +582,107 @@ for (const preset of SCENARIO_PRESETS) {
 }
 
 /**
+ * Live engine-settings panel (#31): one slider per `SETTING_CONTROL_SPECS` entry, grouped
+ * into sections. Each slider posts an `updateSettings` message on 'input' (live, not just
+ * on release) so the effect on a running population is visible immediately — the primary
+ * motivation being `mutationRate`, to feel out how much DNA mutation drives adaptation.
+ * Built once at startup (the spec list is static); values are kept in sync with the
+ * worker's own settings via `syncSettingsPanel`, called from every 'settings' message,
+ * so a scenario preset or save/load import that changes settings updates the sliders too.
+ */
+const settingsSliderInputs = new Map<TunableSettingKey, HTMLInputElement>();
+const settingsValueEls = new Map<TunableSettingKey, HTMLElement>();
+const settingsSpecByKey = new Map(SETTING_CONTROL_GROUPS.flatMap((group) => specsInGroup(group)).map((spec) => [spec.key, spec]));
+
+function buildSettingsPanelContent(): HTMLElement {
+  const root = document.createElement('div');
+  root.className = 'settings-groups';
+
+  for (const group of SETTING_CONTROL_GROUPS) {
+    const specs = specsInGroup(group);
+    if (specs.length === 0) continue;
+
+    const groupEl = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'settings-group-title';
+    title.textContent = group;
+    groupEl.appendChild(title);
+
+    for (const spec of specs) {
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+
+      const head = document.createElement('div');
+      head.className = 'settings-row-head';
+      const label = document.createElement('label');
+      label.textContent = spec.label;
+      label.htmlFor = `setting-${spec.key}`;
+      const valueEl = document.createElement('span');
+      valueEl.className = 'settings-row-value';
+      head.append(label, valueEl);
+      row.appendChild(head);
+
+      const desc = document.createElement('p');
+      desc.className = 'settings-row-desc';
+      desc.textContent = spec.description;
+      row.appendChild(desc);
+
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.id = `setting-${spec.key}`;
+      input.min = String(spec.min);
+      input.max = String(spec.max);
+      input.step = String(spec.step);
+      input.addEventListener('input', () => {
+        const value = Number(input.value);
+        valueEl.textContent = spec.format(value);
+        postToWorker({ type: 'updateSettings', settings: { [spec.key]: value } });
+      });
+      row.appendChild(input);
+
+      settingsSliderInputs.set(spec.key, input);
+      settingsValueEls.set(spec.key, valueEl);
+      groupEl.appendChild(row);
+    }
+    root.appendChild(groupEl);
+  }
+
+  return root;
+}
+
+settingsPanelContentEl.replaceChildren(buildSettingsPanelContent());
+
+/** Reflects `settings` (the worker's current values) onto every slider/label, without touching focus or triggering another 'input' event. */
+function syncSettingsPanel(settings: Settings): void {
+  for (const [key, input] of settingsSliderInputs) {
+    const value = settings[key];
+    input.value = String(value);
+    settingsValueEls.get(key)!.textContent = settingsSpecByKey.get(key)!.format(value);
+  }
+}
+
+const closeSettingsPanel = (): void => {
+  settingsPanelEl.classList.add('hidden');
+};
+
+const openSettingsPanel = (): void => {
+  settingsPanelEl.classList.remove('hidden');
+};
+
+menuSettingsBtn.addEventListener('click', () => {
+  openSettingsPanel();
+  closeControlsMenu();
+});
+settingsPanelCloseBtn.addEventListener('click', closeSettingsPanel);
+settingsPanelBackdropEl.addEventListener('click', closeSettingsPanel);
+
+settingsResetBtn.addEventListener('click', () => {
+  const defaults = defaultTunableSettings();
+  postToWorker({ type: 'updateSettings', settings: defaults });
+  flashHint('Settings reset to defaults');
+});
+
+/**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
  * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
  * for sharing with someone else. Save/Load are also reachable via the Shift+S/L hotkeys
@@ -669,10 +795,12 @@ const paginateStatsIfExpanded = (direction: number): void => {
   if (statsDrawer.isExpanded()) statsDrawer.paginate(direction);
 };
 
-/** Esc closes whichever overlay is topmost: the legend modal first, then (since exiting inspect mode already hides the inspector panel) inspect mode itself. */
+/** Esc closes whichever overlay is topmost: menu/modals first, then (since exiting inspect mode already hides the inspector panel) inspect mode itself. */
 const closeTopmostOverlay = (): void => {
   if (!controlsMenuEl.classList.contains('hidden')) {
     closeControlsMenu();
+  } else if (!settingsPanelEl.classList.contains('hidden')) {
+    closeSettingsPanel();
   } else if (!iconLegendEl.classList.contains('hidden')) {
     closeLegend();
   } else if (inspectMode) {

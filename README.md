@@ -92,7 +92,22 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   `SCENARIO_PRESETS` rather than hand-written per preset so the menu and the
   engine's preset list can't drift apart — picking one posts an
   `applyPreset` message that replaces the worker's running `Simulation`
-  wholesale, the same "act immediately, no confirmation" pattern as Load.
+  wholesale, the same "act immediately, no confirmation" pattern as Load;
+  and the Controls menu's Settings group (#31), which opens a live-tuning
+  panel built from `ui/settingsControls.ts`'s `SETTING_CONTROL_SPECS` (one
+  slider per tunable `Settings` field, grouped, `width`/`height` excluded
+  since those require rebuilding the grid rather than swapping a value) —
+  each slider's `input` event posts an `updateSettings` message the worker
+  applies with `Object.assign` onto the live `Settings` object `Simulation`
+  already holds a reference to, so every phase function (which reads
+  settings fresh each tick) picks up the change on the very next tick with
+  no restart. A "Reset to defaults" button restores `defaultSettings()`.
+  The panel's sliders are kept in sync with the worker's actual values —
+  not just the user's last drag — via the same `'settings'` message
+  `importState`/`applyPreset` already used for the Averages tab's
+  `maxAge`/`maxSize` (now carrying the whole `Settings` object instead of
+  just those two fields), so switching a scenario preset or loading a save
+  updates the panel too instead of leaving it showing stale values.
 
 ## Domain model summary
 
@@ -104,6 +119,11 @@ See the JSDoc on each function in `src/engine/phases.ts` for the exact
 per-phase rules.
 
 ### Settings (`src/engine/settings.ts`)
+
+All fields below except `width`/`height` are live-tunable from the running
+page via the Controls menu's Settings panel (#31) — see `src/main.ts`'s
+architecture note above — rather than only being code-only constants
+requiring a rebuild.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -149,6 +169,14 @@ inclusive (a cell is "in range" when its distance is `<= range`).
 - **Newborn organics** start at `energy == size` (full tank) — the spec
   doesn't say explicitly, but "DefaultSize... starting size" reads most
   naturally as a full starting reserve.
+- **One global `mutationRate` rather than per-trait rates** (#31 explicitly
+  raised this as an open question): `mutateDNA` already treats every
+  mutatable trait as equally likely to be the one that mutates once a
+  single `mutationRate` roll succeeds. Splitting that into a rate per trait
+  would change the DNA mutation model itself — a bigger, separate design
+  decision — not just expose an existing constant, which is what #31's
+  live-tuning panel is scoped to do. Kept as one global rate; the panel
+  makes it fast to explore anyway.
 
 ### Instruction-matrix findings (#12)
 

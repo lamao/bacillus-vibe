@@ -40,6 +40,14 @@ export interface Settings {
   returnHealthWhenReproductionFails: number;
 }
 
+/**
+ * Settings fields safe to change on a running simulation (#31's live tuning panel).
+ * `width`/`height` are excluded — changing grid dimensions means rebuilding the grid,
+ * not swapping a value on the existing one.
+ */
+export type TunableSettingKey = Exclude<keyof Settings, 'width' | 'height'>;
+export type TunableSettings = Pick<Settings, TunableSettingKey>;
+
 export const DEFAULT_GRID_SIZE = 80;
 
 export function defaultSettings(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID_SIZE): Settings {
