@@ -14,9 +14,9 @@ import {
   Substance,
 } from './types';
 
-/** Traits that mutate independently; each is picked with equal probability when a mutation occurs. */
-const MUTABLE_TRAITS = ['body', 'consume', 'produce', 'toxin', 'behavior'] as const;
-type MutableTrait = (typeof MUTABLE_TRAITS)[number];
+/** The 4 point traits, as opposed to `behavior` (the instruction matrix), each picked with equal probability once a mutation is decided to target a point trait rather than behavior. */
+const POINT_TRAITS = ['body', 'consume', 'produce', 'toxin'] as const;
+type PointTrait = (typeof POINT_TRAITS)[number];
 
 export function randomPhysicalSubstance(rng: RNG): Substance {
   return pick(rng, PHYSICAL_SUBSTANCES);
@@ -44,15 +44,30 @@ export function randomDNA(rng: RNG, behavior: InstructionMatrix = starterInstruc
 
 /**
  * Returns the offspring DNA for a reproduction event: an exact copy of `parent`,
- * unless a `mutationRate` roll succeeds, in which case exactly one randomly
- * chosen trait is re-randomized.
+ * unless a `mutationRate` roll succeeds, in which case the mutation happens in two
+ * steps — first deciding *what kind* of mutation this is, then *which* variable
+ * within it changes:
+ *
+ * 1. A `behaviorMutationRatio` roll picks the mutation's category: the behavior/
+ *    instruction matrix, or the point traits as a group. Splitting this out (rather
+ *    than picking uniformly among all 5 traits including behavior, the original
+ *    scheme) is what makes behavior mutation ratio independently tunable — turning
+ *    it up drives faster behavioral adaptation without also having to raise the
+ *    overall `mutationRate` (which would mutate the point traits faster too).
+ * 2. Within whichever category was picked, one variable is chosen uniformly at
+ *    random: one of the 4 point traits, or (for behavior) one instruction-matrix
+ *    state and one mutation operator, exactly as before.
  */
-export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number): DNA {
+export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number, behaviorMutationRatio: number): DNA {
   const child: DNA = { ...parent };
   if (rng.next() >= mutationRate) {
     return child;
   }
-  const trait: MutableTrait = pick(rng, MUTABLE_TRAITS);
+  if (rng.next() < behaviorMutationRatio) {
+    child.behavior = mutateBehavior(parent.behavior, rng);
+    return child;
+  }
+  const trait: PointTrait = pick(rng, POINT_TRAITS);
   switch (trait) {
     case 'body':
       child.body = randomPhysicalSubstance(rng);
@@ -65,9 +80,6 @@ export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number): DNA {
       break;
     case 'toxin':
       child.toxin = randomPhysicalSubstance(rng);
-      break;
-    case 'behavior':
-      child.behavior = mutateBehavior(parent.behavior, rng);
       break;
   }
   return child;

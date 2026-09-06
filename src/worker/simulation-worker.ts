@@ -100,6 +100,13 @@ self.onmessage = (event: MessageEvent) => {
       postSnapshot();
       break;
     }
+    case 'updateSettings':
+      // Mutates the object `simulation.settings` already holds a reference to, rather than
+      // replacing it — every phase function reads settings fresh each tick, so this takes
+      // effect on the very next tick with no simulation restart.
+      Object.assign(settings, message.settings);
+      postSettings();
+      break;
   }
 };
 
@@ -149,13 +156,9 @@ function loop(): void {
   postSnapshotIfDue();
 }
 
-/**
- * Posts the two Settings fields the Averages tab needs (see WorkerSettings' doc). Settings
- * only ever changes wholesale on 'importState', not incrementally, so this is called once
- * up front and again after each import rather than repeated on every snapshot.
- */
+/** Posts the current Settings (see WorkerSettings' doc) — on startup, after a wholesale replacement, and after a live edit. */
 function postSettings(): void {
-  const settingsMessage: WorkerSettings = { type: 'settings', maxAge: settings.maxAge, maxSize: settings.maxSize };
+  const settingsMessage: WorkerSettings = { type: 'settings', settings };
   self.postMessage(settingsMessage);
 }
 
