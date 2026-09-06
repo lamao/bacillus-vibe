@@ -86,9 +86,9 @@ export function defaultSettings(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     toxinRange: 2,
     reproductionRange: 1,
     mutationRate: 0.01,
-    // Reproduces the old flat "1 of 5 traits, equal odds" split exactly: 20% behavior,
-    // 80% split evenly across the 4 point traits also comes out to 20% each.
-    behaviorMutationRatio: 0.2,
+    // 1:1 between the two categories: a mutation is equally likely to target behavior
+    // as it is to target the point traits as a group.
+    behaviorMutationRatio: 0.5,
     returnHealthWhenReproductionFails: 0.5,
     wasteIntoxicationFactor: 1,
   };

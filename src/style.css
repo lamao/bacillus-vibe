@@ -197,6 +197,13 @@ footer#controls .icon-btn {
   justify-content: center;
 }
 
+/* Needed because `footer#controls .icon-btn`'s specificity otherwise beats plain
+   `.hidden` — without this, the Step button (toggled hidden/shown by pause state)
+   stays visibly `display: flex` even with the `hidden` class applied. */
+footer#controls .icon-btn.hidden {
+  display: none;
+}
+
 footer#controls .speed-control {
   display: flex;
   align-items: center;

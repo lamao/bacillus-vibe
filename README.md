@@ -144,7 +144,7 @@ requiring a rebuild.
 | `toxinRange` | 2 | radius within which toxin sources damage a cell |
 | `reproductionRange` | 1 | radius offspring can be placed at, relative to parent |
 | `mutationRate` | 0.01 | probability a mutation happens at all on reproduction |
-| `behaviorMutationRatio` | 0.2 | given a mutation happens, probability it targets behavior rather than a point trait (see mutation model below) |
+| `behaviorMutationRatio` | 0.5 | given a mutation happens, probability it targets behavior rather than a point trait (see mutation model below) |
 | `returnHealthWhenReproductionFails` | 0.5 | fraction of spent energy refunded if reproduction can't place the offspring |
 | `wasteIntoxicationFactor` | 1 | multiplier on self-damage from waste an organic tried to Release but had no room to place (0 disables it) |
 
@@ -183,10 +183,10 @@ inclusive (a cell is "in range" when its distance is `<= range`).
   independently tunable from point-trait mutation, without needing a
   separate rate per individual point trait — which was considered and
   dropped as a finer grain than #31 asked for, and a bigger change to the
-  DNA model itself. `behaviorMutationRatio` defaults to 0.2, which
-  reproduces the original "1 of 5 traits, equal odds" split exactly (20%
-  behavior, 80% split evenly across 4 point traits is also 20% each) —
-  the live-tuning panel is where this actually gets explored.
+  DNA model itself. `behaviorMutationRatio` defaults to 0.5 — a mutation
+  is as likely to land on behavior as on the point traits as a whole
+  (originally 1-of-5-traits odds gave behavior only 20%) — and the
+  live-tuning panel is where this actually gets explored further.
 
 ### Instruction-matrix findings (#12)
 
