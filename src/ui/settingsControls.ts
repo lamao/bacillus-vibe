@@ -19,18 +19,24 @@ const plain = (value: number): string => Number(value.toFixed(3)).toString();
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const multiplier = (value: number): string => `${value.toFixed(2)}x`;
 
-/** Builds one `SettingControlSpec`; `format` defaults to `plain` since most controls below are raw numbers, not fractions or multipliers. */
+/** A slider's numeric range, bundled into one argument so `spec` below stays under the linter's parameter-count limit. */
+interface SliderRange {
+  min: number;
+  max: number;
+  step: number;
+  /** Defaults to `plain` since most controls below are raw numbers, not fractions or multipliers. */
+  format?: (value: number) => string;
+}
+
+/** Builds one `SettingControlSpec`. */
 function spec(
   key: TunableSettingKey,
   label: string,
   description: string,
   group: SettingControlGroup,
-  min: number,
-  max: number,
-  step: number,
-  format: (value: number) => string = plain,
+  range: SliderRange,
 ): SettingControlSpec {
-  return { key, label, description, group, min, max, step, format };
+  return { key, label, description, group, min: range.min, max: range.max, step: range.step, format: range.format ?? plain };
 }
 
 /**
@@ -49,70 +55,85 @@ function spec(
  * already covers the "how do I make behavior mutate faster" motivation.
  */
 export const SETTING_CONTROL_SPECS: readonly SettingControlSpec[] = [
-  spec('mutationRate', 'Mutation rate', 'Probability a mutation happens at all on reproduction.', 'Mutation', 0, 0.5, 0.001, percent),
+  spec('mutationRate', 'Mutation rate', 'Probability a mutation happens at all on reproduction.', 'Mutation', {
+    min: 0,
+    max: 0.5,
+    step: 0.001,
+    format: percent,
+  }),
   spec(
     'behaviorMutationRatio',
     'Behavior mutation ratio',
     'Given a mutation happens, the chance it targets behavior rather than a point trait (body/consume/produce/toxin).',
     'Mutation',
-    0,
-    1,
-    0.01,
-    percent,
+    { min: 0, max: 1, step: 0.01, format: percent },
   ),
-  spec('biteYield', 'Bite yield', 'Energy gained from biting an adjacent food entity while moving.', 'Energy & growth', 0, 500, 5),
-  spec('sunYield', 'Sun yield', 'Energy gained per tick by Sun-consumers.', 'Energy & growth', 0, 100, 1),
+  spec('biteYield', 'Bite yield', 'Energy gained from biting an adjacent food entity while moving.', 'Energy & growth', {
+    min: 0,
+    max: 500,
+    step: 5,
+  }),
+  spec('sunYield', 'Sun yield', 'Energy gained per tick by Sun-consumers.', 'Energy & growth', { min: 0, max: 100, step: 1 }),
   spec(
     'mineralsYield',
     'Minerals yield',
     'Max amount drained from a matching mineral/organic per tick (passive digestion).',
     'Energy & growth',
-    0,
-    50,
-    1,
+    { min: 0, max: 50, step: 1 },
   ),
-  spec('moveConsumption', 'Move consumption', 'Energy cost of taking a move step.', 'Energy & growth', 0, 50, 1),
-  spec('permanentConsumption', 'Permanent consumption', 'Base metabolic energy cost per tick, always applied.', 'Energy & growth', 0, 50, 1),
+  spec('moveConsumption', 'Move consumption', 'Energy cost of taking a move step.', 'Energy & growth', { min: 0, max: 50, step: 1 }),
+  spec('permanentConsumption', 'Permanent consumption', 'Base metabolic energy cost per tick, always applied.', 'Energy & growth', {
+    min: 0,
+    max: 50,
+    step: 1,
+  }),
   spec(
     'productionPerformance',
     'Production performance',
     'Fraction of consumed food lost to inefficiency, becomes waste.',
     'Energy & growth',
-    0,
-    1,
-    0.01,
-    percent,
+    { min: 0, max: 1, step: 0.01, format: percent },
   ),
-  spec('mineralDegradation', 'Mineral degradation', 'Mineral size decay per tick.', 'Energy & growth', 0, 20, 1),
-  spec('defaultSize', 'Default size', 'Starting size of a spawned/offspring organic.', 'Energy & growth', 100, 2000, 10),
-  spec('reproductionThreshold', 'Reproduction threshold', 'Energy level that triggers splitting.', 'Energy & growth', 200, 5000, 50),
-  spec('maxSize', 'Max size', 'Hard cap on size/energy.', 'Energy & growth', 200, 6000, 50),
-  spec('maxAge', 'Max age', 'Organic dies of old age at this age.', 'Energy & growth', 100, 5000, 50),
+  spec('mineralDegradation', 'Mineral degradation', 'Mineral size decay per tick.', 'Energy & growth', { min: 0, max: 20, step: 1 }),
+  spec('defaultSize', 'Default size', 'Starting size of a spawned/offspring organic.', 'Energy & growth', {
+    min: 100,
+    max: 2000,
+    step: 10,
+  }),
+  spec('reproductionThreshold', 'Reproduction threshold', 'Energy level that triggers splitting.', 'Energy & growth', {
+    min: 200,
+    max: 5000,
+    step: 50,
+  }),
+  spec('maxSize', 'Max size', 'Hard cap on size/energy.', 'Energy & growth', { min: 200, max: 6000, step: 50 }),
+  spec('maxAge', 'Max age', 'Organic dies of old age at this age.', 'Energy & growth', { min: 100, max: 5000, step: 50 }),
   spec(
     'returnHealthWhenReproductionFails',
     'Failed-split refund',
     "Fraction of the would-be offspring's energy refunded to the parent if reproduction can't place the offspring.",
     'Energy & growth',
-    0,
-    1,
-    0.01,
-    percent,
+    { min: 0, max: 1, step: 0.01, format: percent },
   ),
   spec(
     'wasteIntoxicationFactor',
     'Waste intoxication',
     'Self-damage multiplier for waste an organic tried to Release but had no room to place — 0 disables it, 1 is the original 1:1 cost.',
     'Energy & growth',
-    0,
-    3,
-    0.05,
-    multiplier,
+    { min: 0, max: 3, step: 0.05, format: multiplier },
   ),
-  spec('visionRange', 'Vision range', 'Radius (Chebyshev distance) for spotting food to move toward.', 'Ranges', 0, 10, 1),
-  spec('consumingRange', 'Consuming range', 'Radius for passive mineral/organic digestion.', 'Ranges', 0, 10, 1),
-  spec('productionRange', 'Production range', 'Radius for depositing waste as minerals.', 'Ranges', 0, 10, 1),
-  spec('toxinRange', 'Toxin range', 'Radius within which toxin sources damage a cell.', 'Ranges', 0, 10, 1),
-  spec('reproductionRange', 'Reproduction range', 'Radius offspring can be placed at, relative to parent.', 'Ranges', 0, 10, 1),
+  spec('visionRange', 'Vision range', 'Radius (Chebyshev distance) for spotting food to move toward.', 'Ranges', {
+    min: 0,
+    max: 10,
+    step: 1,
+  }),
+  spec('consumingRange', 'Consuming range', 'Radius for passive mineral/organic digestion.', 'Ranges', { min: 0, max: 10, step: 1 }),
+  spec('productionRange', 'Production range', 'Radius for depositing waste as minerals.', 'Ranges', { min: 0, max: 10, step: 1 }),
+  spec('toxinRange', 'Toxin range', 'Radius within which toxin sources damage a cell.', 'Ranges', { min: 0, max: 10, step: 1 }),
+  spec('reproductionRange', 'Reproduction range', 'Radius offspring can be placed at, relative to parent.', 'Ranges', {
+    min: 0,
+    max: 10,
+    step: 1,
+  }),
 ];
 
 /** Ordered group names, for rendering the panel's sections in a fixed, deliberate order rather than spec array order. */
