@@ -6,17 +6,17 @@ describe('moveOrganics (phase 2)', () => {
   it('does nothing to organics without a direction', () => {
     const settings = testSettings();
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { direction: null, energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { chosenAction: { type: 'Move', mode: 'TowardConsume' }, direction: null, energy: 500 });
     place(grid, o);
     moveOrganics(grid, settings);
     expect(o.energy).toBe(500);
     expect(o.position).toEqual({ x: 5, y: 5 });
   });
 
-  it('does nothing to non-movers even if a direction is somehow set', () => {
+  it("does nothing when the chosen action isn't Move, even if a direction is somehow set", () => {
     const settings = testSettings();
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { dna: dna({ canMove: false }), direction: { x: 1, y: 0 }, energy: 500 });
+    const o = organic({ x: 5, y: 5 }, { chosenAction: { type: 'Rest' }, direction: { x: 1, y: 0 }, energy: 500 });
     place(grid, o);
     moveOrganics(grid, settings);
     expect(o.energy).toBe(500);
@@ -26,7 +26,10 @@ describe('moveOrganics (phase 2)', () => {
   it('relocates into a free target cell, paying MoveConsumption', () => {
     const settings = testSettings({ moveConsumption: 10 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { direction: { x: 1, y: 0 }, energy: 500 });
+    const o = organic(
+      { x: 5, y: 5 },
+      { chosenAction: { type: 'Move', mode: 'TowardConsume' }, direction: { x: 1, y: 0 }, energy: 500 },
+    );
     place(grid, o);
     moveOrganics(grid, settings);
     expect(o.energy).toBe(490);
@@ -38,7 +41,10 @@ describe('moveOrganics (phase 2)', () => {
   it('pays the move cost but stays out of bounds without throwing', () => {
     const settings = testSettings({ moveConsumption: 10 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 0, y: 0 }, { direction: { x: -1, y: 0 }, energy: 500 });
+    const o = organic(
+      { x: 0, y: 0 },
+      { chosenAction: { type: 'Move', mode: 'TowardConsume' }, direction: { x: -1, y: 0 }, energy: 500 },
+    );
     place(grid, o);
     moveOrganics(grid, settings);
     expect(o.energy).toBe(490);
@@ -48,7 +54,15 @@ describe('moveOrganics (phase 2)', () => {
   it('stays in place when blocked by a non-matching entity', () => {
     const settings = testSettings({ moveConsumption: 10 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { direction: { x: 1, y: 0 }, energy: 500, dna: dna({ consume: 'Green' }) });
+    const o = organic(
+      { x: 5, y: 5 },
+      {
+        chosenAction: { type: 'Move', mode: 'TowardConsume' },
+        direction: { x: 1, y: 0 },
+        energy: 500,
+        dna: dna({ consume: 'Green' }),
+      },
+    );
     const blocker = mineral({ x: 6, y: 5 }, 'Red', 100);
     place(grid, o, blocker);
     moveOrganics(grid, settings);
@@ -62,6 +76,7 @@ describe('moveOrganics (phase 2)', () => {
     const settings = testSettings({ moveConsumption: 10, biteYield: 200, productionPerformance: 0.1 });
     const grid = emptyGrid(settings);
     const o = organic({ x: 5, y: 5 }, {
+      chosenAction: { type: 'Move', mode: 'TowardConsume' },
       direction: { x: 1, y: 0 },
       energy: 500,
       size: 1000,
@@ -82,6 +97,7 @@ describe('moveOrganics (phase 2)', () => {
     const settings = testSettings({ moveConsumption: 0, biteYield: 200, productionPerformance: 0, maxSize: 1000 });
     const grid = emptyGrid(settings);
     const o = organic({ x: 5, y: 5 }, {
+      chosenAction: { type: 'Move', mode: 'TowardConsume' },
       direction: { x: 1, y: 0 },
       energy: 950,
       size: 950,
@@ -99,7 +115,10 @@ describe('moveOrganics (phase 2)', () => {
   it('drains only up to the target\'s remaining size', () => {
     const settings = testSettings({ moveConsumption: 0, biteYield: 200, productionPerformance: 0 });
     const grid = emptyGrid(settings);
-    const o = organic({ x: 5, y: 5 }, { direction: { x: 1, y: 0 }, energy: 0, size: 1000, dna: dna({ consume: 'Green' }) });
+    const o = organic(
+      { x: 5, y: 5 },
+      { chosenAction: { type: 'Move', mode: 'TowardConsume' }, direction: { x: 1, y: 0 }, energy: 0, size: 1000, dna: dna({ consume: 'Green' }) },
+    );
     const food = mineral({ x: 6, y: 5 }, 'Green', 50);
     place(grid, o, food);
     moveOrganics(grid, settings);
@@ -111,7 +130,10 @@ describe('moveOrganics (phase 2)', () => {
   it('bites a matching-food organic, reducing its size and clamping its energy', () => {
     const settings = testSettings({ moveConsumption: 0, biteYield: 200, productionPerformance: 0 });
     const grid = emptyGrid(settings);
-    const hunter = organic({ x: 5, y: 5 }, { direction: { x: 1, y: 0 }, energy: 0, size: 1000, dna: dna({ consume: 'Blue' }) });
+    const hunter = organic(
+      { x: 5, y: 5 },
+      { chosenAction: { type: 'Move', mode: 'TowardConsume' }, direction: { x: 1, y: 0 }, energy: 0, size: 1000, dna: dna({ consume: 'Blue' }) },
+    );
     const prey = organic({ x: 6, y: 5 }, { dna: dna({ body: 'Blue' }), size: 150, energy: 150 });
     place(grid, hunter, prey);
     moveOrganics(grid, settings);

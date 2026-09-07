@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DefaultRNG, pick } from '../../src/engine/rng';
+import { SeededRNG, pick, pickExcluding } from '../../src/engine/rng';
 import { MockRNG } from './mockRng';
 
-describe('DefaultRNG', () => {
+describe('SeededRNG', () => {
   it('next() is within [0, 1)', () => {
-    const rng = new DefaultRNG();
+    const rng = new SeededRNG(1);
     for (let i = 0; i < 20; i++) {
       const v = rng.next();
       expect(v).toBeGreaterThanOrEqual(0);
@@ -13,7 +13,7 @@ describe('DefaultRNG', () => {
   });
 
   it('int(n) is within [0, n)', () => {
-    const rng = new DefaultRNG();
+    const rng = new SeededRNG(1);
     for (let i = 0; i < 20; i++) {
       const v = rng.int(7);
       expect(v).toBeGreaterThanOrEqual(0);
@@ -21,12 +21,68 @@ describe('DefaultRNG', () => {
       expect(Number.isInteger(v)).toBe(true);
     }
   });
+
+  it('produces the same sequence for the same seed', () => {
+    const a = new SeededRNG(42);
+    const b = new SeededRNG(42);
+    const seqA = Array.from({ length: 10 }, () => a.next());
+    const seqB = Array.from({ length: 10 }, () => b.next());
+    expect(seqA).toEqual(seqB);
+  });
+
+  it('produces a different sequence for a different seed', () => {
+    const a = new SeededRNG(42);
+    const b = new SeededRNG(43);
+    expect(a.next()).not.toBe(b.next());
+  });
+
+  it('defaults to a random seed when none is given, varying across instances', () => {
+    const a = new SeededRNG();
+    const b = new SeededRNG();
+    expect(a.next()).not.toBe(b.next());
+  });
+
+  it('getState()/setState() round-trip so a restored RNG continues identically', () => {
+    const original = new SeededRNG(99);
+    original.next();
+    original.next();
+    const state = original.getState();
+
+    const restored = new SeededRNG(0);
+    restored.setState(state);
+
+    const nextFromOriginal = original.next();
+    const nextFromRestored = restored.next();
+    expect(nextFromRestored).toBe(nextFromOriginal);
+  });
 });
 
 describe('pick', () => {
   it('selects the item at the RNG-derived index', () => {
     const rng = new MockRNG([0.5]);
     expect(pick(rng, ['a', 'b', 'c', 'd'])).toBe('c');
+  });
+});
+
+describe('pickExcluding', () => {
+  it('picks from the pool with the excluded value filtered out first', () => {
+    const rng = new MockRNG([0]);
+    // ['a', 'b', 'c', 'd'] with 'a' excluded -> ['b', 'c', 'd']; index 0 -> 'b'.
+    expect(pickExcluding(rng, ['a', 'b', 'c', 'd'], 'a')).toBe('b');
+  });
+
+  it('never returns the excluded value, across the whole index range', () => {
+    for (let i = 0; i < 4; i++) {
+      const rng = new MockRNG([i / 4]);
+      expect(pickExcluding(rng, ['a', 'b', 'c', 'd'], 'b')).not.toBe('b');
+    }
+  });
+
+  it('supports a custom equality function for non-primitive items', () => {
+    const rng = new MockRNG([0]);
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const result = pickExcluding(rng, items, { id: 1 }, (a, b) => a.id === b.id);
+    expect(result).toEqual({ id: 2 });
   });
 });
 

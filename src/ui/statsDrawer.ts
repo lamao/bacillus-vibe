@@ -1,0 +1,499 @@
+import { ALL_SUBSTANCES, PHYSICAL_SUBSTANCES, Substance } from '../engine/types';
+import { AverageRatios } from './averages';
+import { scaleDomain, scaleLinePoints } from './chart';
+import { MutationStats } from './mutations';
+import { SUBSTANCE_COLORS } from './renderer';
+import { StatCounts } from './stats';
+import { BirthsDeathsRate, StatsHistory, StatsSample, TIME_WINDOWS, TimeWindow } from './statsHistory';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+const CHEVRON_UP = '<polyline points="6 15 12 9 18 15"></polyline>';
+const CHEVRON_DOWN = '<polyline points="6 9 12 15 18 9"></polyline>';
+const ARROW_LEFT = '<polyline points="15 4 7 12 15 20"></polyline>';
+const ARROW_RIGHT = '<polyline points="9 4 17 12 9 20"></polyline>';
+
+function svgIcon(inner: string, size: number): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+function requireEl<T extends Element>(selector: string): T {
+  const el = document.querySelector<T>(selector);
+  if (!el) throw new Error(`Petri: expected stats drawer element ${selector} was not found`);
+  return el;
+}
+
+const CHART_WIDTH = 1300;
+const CHART_HEIGHT = 190;
+const CHART_MARGIN = 12;
+const GRIDLINE_COUNT = 4;
+const TOTAL_LINE_COLOR = '#e6e9f2';
+const AXIS_LABEL_COLOR = '#5b6376';
+
+/**
+ * Titles of the drawer's paged-carousel tabs, in display order: Population (#38), then
+ * Consume/Produce/Toxin/Composition — all four per-substance breakdowns of the
+ * population, grouped together — followed by Averages (#39), Births & deaths (#40), and
+ * Avg/Max mutations (#80). The mutation tab is split in two (rather than one "Mutations"
+ * tab with all 4 lines) because the average and max of a counter that only grows can
+ * diverge by orders of magnitude over a long run — one shared axis would flatten the
+ * average line into the bottom of the chart.
+ */
+const PAGE_TITLES = [
+  'Population',
+  'Consume',
+  'Produce',
+  'Toxin',
+  'Composition',
+  'Averages',
+  'Births & deaths',
+  'Avg mutations',
+  'Max mutations',
+] as const;
+
+/**
+ * The Composition tab's two lines. Organic is the exact same series as the Population
+ * tab's Total (formatStats() already defines Population as organics.length) — drawn in
+ * a different color here to fit this page's organic/mineral framing, not a new metric.
+ */
+const ORGANIC_LINE_COLOR = '#4f8cff';
+const MINERAL_LINE_COLOR = '#8b93a7';
+
+/**
+ * The Averages tab's three lines: the same 0-1 ratios the engine's own instruction-
+ * matrix sensors read per organic (EnergyRatio, Age, SizeRatio — see
+ * engine/phases.ts's evaluateSensor), averaged across the population, all sharing one
+ * fixed 0-100% axis since they're already comparable ratios despite different units.
+ */
+const AVERAGE_LINES: { label: string; color: string; value: (averages: AverageRatios) => number }[] = [
+  { label: 'Avg energy (% of size)', color: '#4f8cff', value: (averages) => averages.avgEnergy },
+  { label: 'Avg age (% of max age)', color: '#f472b6', value: (averages) => averages.avgAge },
+  { label: 'Avg size (% of max size)', color: '#a78bfa', value: (averages) => averages.avgSize },
+];
+
+/**
+ * The Births & deaths tab's two lines, colored to match the header trend chevrons'
+ * up/down palette (green/red). Unlike Averages, these are raw per-second rates with no
+ * natural upper bound, so the chart autoscales like Population's rather than using a
+ * fixed axis.
+ */
+const BIRTHS_DEATHS_LINES: { label: string; color: string; value: (rate: BirthsDeathsRate) => number }[] = [
+  { label: 'Births / sec', color: '#22c55e', value: (rate) => rate.births },
+  { label: 'Deaths / sec', color: '#ef4444', value: (rate) => rate.deaths },
+];
+
+/**
+ * The Avg/Max mutations tabs' lines (#80): average and max of each DNA mutation counter
+ * across the population, split across two tabs (see {@link PAGE_TITLES}) since they can
+ * be of very different scale over a long run. Like Births & deaths, mutation counts only
+ * grow and have no natural ceiling, so both charts autoscale to their own window's max
+ * rather than sharing a fixed axis.
+ */
+const AVG_MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
+  { label: 'Avg instruction mutations', color: '#4f8cff', value: (mutations) => mutations.avgInstructionMutations },
+  { label: 'Avg trait mutations', color: '#f472b6', value: (mutations) => mutations.avgTraitMutations },
+];
+const MAX_MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
+  { label: 'Max instruction mutations', color: '#1d4ed8', value: (mutations) => mutations.maxInstructionMutations },
+  { label: 'Max trait mutations', color: '#be185d', value: (mutations) => mutations.maxTraitMutations },
+];
+
+/** One decimal place for a fractional average, a bare integer otherwise — keeps the mutation tabs' axis labels compact either way. */
+function formatMutationAxisValue(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
+}
+
+/**
+ * The docked-bottom stats widget (#38): a collapsed bar (total + per-substance chips)
+ * that expands into a paged-carousel drawer with a time-windowed line chart. Wires its
+ * own DOM (queried by id from index.html) and exposes `update`, called once per
+ * animation frame with the latest counts, to keep the bar/chart in sync.
+ */
+export class StatsDrawer {
+  private readonly history = new StatsHistory();
+  private expanded = false;
+  private pageIndex = 0;
+  private selectedWindow: TimeWindow = 2000;
+  private lastChartSignature: string | null = null;
+
+  private readonly root = requireEl<HTMLElement>('#stats-drawer');
+  private readonly bar = requireEl<HTMLButtonElement>('#stats-bar');
+  private readonly chevron = requireEl<HTMLElement>('#stats-chevron');
+  private readonly totalValueEl = requireEl<HTMLElement>('#stats-total-value');
+  private readonly chipRowEl = requireEl<HTMLElement>('#stats-chip-row');
+  private readonly body = requireEl<HTMLElement>('#stats-drawer-body');
+  private readonly prevBtn = requireEl<HTMLButtonElement>('#stats-prev');
+  private readonly nextBtn = requireEl<HTMLButtonElement>('#stats-next');
+  private readonly pageTitleEl = requireEl<HTMLElement>('#stats-page-title');
+  private readonly dotsEl = requireEl<HTMLElement>('#stats-pager-dots');
+  private readonly chipsEl = requireEl<HTMLElement>('#stats-chips');
+  private readonly chartEl = requireEl<SVGSVGElement>('#stats-chart');
+  private readonly legendEl = requireEl<HTMLElement>('#stats-legend');
+
+  constructor() {
+    this.chevron.innerHTML = svgIcon(CHEVRON_UP, 16);
+    this.prevBtn.innerHTML = svgIcon(ARROW_LEFT, 18);
+    this.nextBtn.innerHTML = svgIcon(ARROW_RIGHT, 18);
+    this.chartEl.setAttribute('viewBox', `0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`);
+    // The chart's CSS box (esp. on mobile) is nowhere near this viewBox's aspect ratio;
+    // without "none" the default xMidYMid-meet scaling would preserve that ratio and
+    // letterbox the chart, leaving a large empty band above/below the plotted lines.
+    this.chartEl.setAttribute('preserveAspectRatio', 'none');
+
+    this.buildDots();
+    this.buildWindowChips();
+    this.updatePagerState();
+
+    this.bar.addEventListener('click', () => this.setExpanded(!this.expanded));
+    this.prevBtn.addEventListener('click', () => this.changePage(-1));
+    this.nextBtn.addEventListener('click', () => this.changePage(1));
+
+    // Published as a CSS variable (rather than a hardcoded collapsed-bar height) so the
+    // inspector panel — an independent overlay anchored to canvas-wrap's top — can keep
+    // its max-height clear of however tall this drawer currently is, collapsed or
+    // expanded, without the two components needing to know about each other's layout.
+    new ResizeObserver(() => this.publishHeight()).observe(this.root);
+    this.publishHeight();
+  }
+
+  private publishHeight(): void {
+    document.documentElement.style.setProperty('--stats-drawer-height', `${this.root.getBoundingClientRect().height}px`);
+  }
+
+  /** Called once per animation frame with the latest population counts, averages, births/deaths rate, mutation load, and tick. */
+  update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, mutations: MutationStats, tick: number): void {
+    this.history.record({
+      tick,
+      total: counts.total,
+      minerals: counts.minerals,
+      bySubstance: counts.bySubstance,
+      byConsume: counts.byConsume,
+      byProduce: counts.byProduce,
+      byToxin: counts.byToxin,
+      averages,
+      birthsDeaths,
+      mutations,
+    });
+    this.renderBar(counts);
+    if (this.expanded) this.renderChart(counts);
+  }
+
+  /** Whether the drawer is currently expanded, for callers (e.g. the chart-pagination shortcut) that should no-op while it's collapsed. */
+  isExpanded(): boolean {
+    return this.expanded;
+  }
+
+  /** Toggles the drawer open/closed, e.g. from the D keyboard shortcut. */
+  toggleExpanded(): void {
+    this.setExpanded(!this.expanded);
+  }
+
+  /** Moves the carousel by delta pages, e.g. from the [ / ] keyboard shortcuts. */
+  paginate(delta: number): void {
+    this.changePage(delta);
+  }
+
+  private setExpanded(value: boolean): void {
+    this.expanded = value;
+    this.root.classList.toggle('expanded', value);
+    this.body.classList.toggle('hidden', !value);
+    this.bar.setAttribute('aria-expanded', String(value));
+    this.chevron.innerHTML = svgIcon(value ? CHEVRON_DOWN : CHEVRON_UP, 16);
+    if (value) this.lastChartSignature = null;
+  }
+
+  private buildDots(): void {
+    this.dotsEl.replaceChildren();
+    this.dotsEl.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < PAGE_TITLES.length; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'stats-dot';
+      this.dotsEl.appendChild(dot);
+    }
+  }
+
+  private buildWindowChips(): void {
+    this.chipsEl.replaceChildren();
+    for (const timeWindow of TIME_WINDOWS) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'stats-chip';
+      chip.textContent = `Last ${timeWindow.toLocaleString()}`;
+      chip.classList.toggle('active', timeWindow === this.selectedWindow);
+      chip.addEventListener('click', () => {
+        if (this.selectedWindow === timeWindow) return;
+        this.selectedWindow = timeWindow;
+        for (const el of this.chipsEl.children) el.classList.toggle('active', el === chip);
+        this.lastChartSignature = null;
+      });
+      this.chipsEl.appendChild(chip);
+    }
+  }
+
+  private changePage(delta: number): void {
+    if (PAGE_TITLES.length <= 1) return;
+    this.pageIndex = (this.pageIndex + delta + PAGE_TITLES.length) % PAGE_TITLES.length;
+    this.updatePagerState();
+    this.lastChartSignature = null;
+  }
+
+  private updatePagerState(): void {
+    this.pageTitleEl.textContent = PAGE_TITLES[this.pageIndex];
+    const dots = this.dotsEl.children;
+    for (let i = 0; i < dots.length; i++) {
+      dots[i].classList.toggle('active', i === this.pageIndex);
+    }
+    const multiPage = PAGE_TITLES.length > 1;
+    this.prevBtn.disabled = !multiPage;
+    this.nextBtn.disabled = !multiPage;
+  }
+
+  private renderBar(counts: StatCounts): void {
+    this.totalValueEl.textContent = counts.total.toString();
+    this.chipRowEl.replaceChildren();
+    for (const substance of PHYSICAL_SUBSTANCES) {
+      const count = counts.bySubstance.get(substance) ?? 0;
+      const chip = document.createElement('span');
+      chip.className = 'stats-chip-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.backgroundColor = SUBSTANCE_COLORS[substance];
+      chip.append(swatch, document.createTextNode(count.toString()));
+      this.chipRowEl.appendChild(chip);
+    }
+  }
+
+  /** Renders the active page's chart (+ legend, for pages that need one), skipped when nothing that would change its output has changed. */
+  private renderChart(counts: StatCounts): void {
+    const samples = this.history.window(this.selectedWindow);
+    const latestTick = samples[samples.length - 1]?.tick ?? -1;
+    // Population/Consume/Produce/Toxin's line sets can each change (which substances are
+    // currently present); Composition, Averages, Births & deaths, and Avg/Max mutations
+    // always draw the same fixed lines, so their signature needs nothing extra.
+    const presentKey = (substances: readonly Substance[], byField: ReadonlyMap<Substance, number>): string =>
+      substances.filter((substance) => (byField.get(substance) ?? 0) > 0).join(',');
+    const pageKeys: Partial<Record<number, string>> = {
+      0: presentKey(PHYSICAL_SUBSTANCES, counts.bySubstance),
+      1: presentKey(ALL_SUBSTANCES, counts.byConsume),
+      2: presentKey(PHYSICAL_SUBSTANCES, counts.byProduce),
+      3: presentKey(PHYSICAL_SUBSTANCES, counts.byToxin),
+    };
+    const pageKey = pageKeys[this.pageIndex] ?? '';
+    const signature = `${this.pageIndex}|${this.selectedWindow}|${samples.length}|${latestTick}|${pageKey}`;
+    if (signature === this.lastChartSignature) return;
+    this.lastChartSignature = signature;
+
+    this.chartEl.replaceChildren();
+    this.legendEl.replaceChildren();
+
+    for (let i = 0; i < GRIDLINE_COUNT; i++) {
+      const y = CHART_MARGIN + (i / (GRIDLINE_COUNT - 1)) * (CHART_HEIGHT - 2 * CHART_MARGIN);
+      this.chartEl.appendChild(this.gridline(y));
+    }
+
+    switch (this.pageIndex) {
+      case 0:
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.bySubstance, (s) => s.bySubstance, true);
+        break;
+      case 1:
+        this.renderSubstanceBreakdownChart(samples, ALL_SUBSTANCES, counts.byConsume, (s) => s.byConsume, false);
+        break;
+      case 2:
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byProduce, (s) => s.byProduce, false);
+        break;
+      case 3:
+        this.renderSubstanceBreakdownChart(samples, PHYSICAL_SUBSTANCES, counts.byToxin, (s) => s.byToxin, false);
+        break;
+      case 4:
+        this.renderCompositionChart(samples);
+        break;
+      case 5:
+        this.renderAveragesChart(samples);
+        break;
+      case 6:
+        this.renderBirthsDeathsChart(samples);
+        break;
+      case 7:
+        this.renderMutationLinesChart(samples, AVG_MUTATION_LINES);
+        break;
+      case 8:
+        this.renderMutationLinesChart(samples, MAX_MUTATION_LINES);
+        break;
+    }
+  }
+
+  /**
+   * Shared renderer for the four per-substance-breakdown pages (Population, Consume,
+   * Produce, Toxin): one line per substance currently present (plus, on Population only,
+   * a total line — on Consume/Produce/Toxin it would just retrace Population's total, so
+   * `showTotal` is false there), all autoscaled to the window's max total. `substances` is
+   * the field's full domain (Consume includes Sun; the others never do); `pick` reads that
+   * field's tally off a sample.
+   */
+  private renderSubstanceBreakdownChart(
+    samples: StatsSample[],
+    substances: readonly Substance[],
+    currentCounts: ReadonlyMap<Substance, number>,
+    pick: (sample: StatsSample) => ReadonlyMap<Substance, number>,
+    showTotal: boolean,
+  ): void {
+    const presentSubstances = substances.filter((substance) => (currentCounts.get(substance) ?? 0) > 0);
+    const maxTotal = samples.reduce((max, sample) => Math.max(max, sample.total), 0);
+
+    if (showTotal) {
+      this.chartEl.appendChild(
+        this.polyline(
+          scaleLinePoints(
+            samples.map((s) => s.total),
+            CHART_WIDTH,
+            CHART_HEIGHT,
+            CHART_MARGIN,
+            maxTotal,
+          ),
+          TOTAL_LINE_COLOR,
+          2.5,
+        ),
+      );
+    }
+    for (const substance of presentSubstances) {
+      const values = samples.map((s) => pick(s).get(substance) ?? 0);
+      this.chartEl.appendChild(
+        this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxTotal), SUBSTANCE_COLORS[substance], 1.75),
+      );
+    }
+  }
+
+  private renderAveragesChart(samples: StatsSample[]): void {
+    this.chartEl.appendChild(this.axisLabel(CHART_MARGIN + 4, '100%'));
+    this.chartEl.appendChild(this.axisLabel(CHART_HEIGHT - CHART_MARGIN + 4, '0%'));
+    for (const line of AVERAGE_LINES) {
+      const values = samples.map((s) => line.value(s.averages));
+      // maxValue is fixed at 1 (not autoscaled like Population's Total-derived max) since
+      // these are already 0-1 ratios sharing one intentionally fixed 0-100% axis.
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, 1), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  private renderBirthsDeathsChart(samples: StatsSample[]): void {
+    const maxRate = samples.reduce((max, sample) => Math.max(max, sample.birthsDeaths.births, sample.birthsDeaths.deaths), 0);
+    for (const line of BIRTHS_DEATHS_LINES) {
+      const values = samples.map((s) => line.value(s.birthsDeaths));
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxRate), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  /**
+   * Shared renderer for the Avg/Max mutations tabs: autoscales to `lines`' own max (each
+   * tab only sees its own 2 lines, not all 4 — see {@link PAGE_TITLES}'s note on why avg
+   * and max are split), and labels the gridlines with the values they actually represent
+   * so the two charts' very different scales are legible without a shared/fixed axis.
+   */
+  private renderMutationLinesChart(
+    samples: StatsSample[],
+    lines: { label: string; color: string; value: (mutations: MutationStats) => number }[],
+  ): void {
+    const maxValue = samples.reduce(
+      (max, sample) => Math.max(max, ...lines.map((line) => line.value(sample.mutations))),
+      0,
+    );
+    this.renderYAxisReferenceLabels(maxValue, formatMutationAxisValue);
+    for (const line of lines) {
+      const values = samples.map((s) => line.value(s.mutations));
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxValue), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  /**
+   * Draws one numeric label per gridline, evenly spanning `[0, domain]` top-to-bottom —
+   * `domain` (not the raw `maxValue`) since that's the actual axis top `scaleLinePoints`
+   * plots against, headroom included, so a label matches where its gridline really sits.
+   */
+  private renderYAxisReferenceLabels(maxValue: number, format: (value: number) => string): void {
+    const domain = scaleDomain(maxValue);
+    for (let i = 0; i < GRIDLINE_COUNT; i++) {
+      const y = CHART_MARGIN + (i / (GRIDLINE_COUNT - 1)) * (CHART_HEIGHT - 2 * CHART_MARGIN);
+      const value = domain * (1 - i / (GRIDLINE_COUNT - 1));
+      this.chartEl.appendChild(this.axisLabel(y + 4, format(value)));
+    }
+  }
+
+  private renderCompositionChart(samples: StatsSample[]): void {
+    const maxValue = samples.reduce((max, sample) => Math.max(max, sample.total, sample.minerals), 0);
+    this.chartEl.appendChild(
+      this.polyline(
+        scaleLinePoints(
+          samples.map((s) => s.total),
+          CHART_WIDTH,
+          CHART_HEIGHT,
+          CHART_MARGIN,
+          maxValue,
+        ),
+        ORGANIC_LINE_COLOR,
+        2.5,
+      ),
+    );
+    this.chartEl.appendChild(
+      this.polyline(
+        scaleLinePoints(
+          samples.map((s) => s.minerals),
+          CHART_WIDTH,
+          CHART_HEIGHT,
+          CHART_MARGIN,
+          maxValue,
+        ),
+        MINERAL_LINE_COLOR,
+        1.75,
+      ),
+    );
+
+    // Unlike the other tabs' static legend labels, this one shows the live current
+    // count next to each line (matching the mockup) since it's the only tab where the
+    // legend doubles as the reading a viewer would otherwise get from per-substance chips.
+    const latest = samples[samples.length - 1];
+    this.legendEl.appendChild(this.legendItem(ORGANIC_LINE_COLOR, `Organic ${latest?.total ?? 0} (= Population)`));
+    this.legendEl.appendChild(this.legendItem(MINERAL_LINE_COLOR, `Mineral ${latest?.minerals ?? 0}`));
+  }
+
+  private axisLabel(y: number, text: string): SVGTextElement {
+    const el = document.createElementNS(SVG_NS, 'text');
+    el.setAttribute('x', '4');
+    el.setAttribute('y', y.toFixed(1));
+    el.setAttribute('fill', AXIS_LABEL_COLOR);
+    el.setAttribute('font-size', '11');
+    el.textContent = text;
+    return el;
+  }
+
+  private legendItem(color: string, label: string): HTMLElement {
+    const item = document.createElement('span');
+    item.className = 'stats-chip-item';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.backgroundColor = color;
+    item.append(swatch, document.createTextNode(label));
+    return item;
+  }
+
+  private gridline(y: number): SVGLineElement {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', '0');
+    line.setAttribute('x2', String(CHART_WIDTH));
+    line.setAttribute('y1', y.toFixed(1));
+    line.setAttribute('y2', y.toFixed(1));
+    line.setAttribute('stroke', '#263149');
+    line.setAttribute('stroke-width', '1');
+    return line;
+  }
+
+  private polyline(points: string, color: string, width: number): SVGPolylineElement {
+    const el = document.createElementNS(SVG_NS, 'polyline');
+    el.setAttribute('points', points);
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', color);
+    el.setAttribute('stroke-width', String(width));
+    return el;
+  }
+}

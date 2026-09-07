@@ -5,3 +5,4 @@ export * from './grid';
 export * from './dna';
 export * from './phases';
 export * from './simulation';
+export * from './presets';

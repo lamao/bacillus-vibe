@@ -1,19 +1,27 @@
 name: Deploy to GitHub Pages
 
+# Publishes dist/ to the root of the gh-pages branch — the same branch
+# pr-preview.yml publishes PR previews to, under pr-preview/pr-<n>/.
+# GitHub Pages only serves one source per repo (a branch, or Actions-native
+# deploy artifacts), and rossjrw/pr-preview-action requires the
+# branch-based source, so the main-branch deploy targets that same branch
+# too instead of the newer actions/deploy-pages flow. See README's
+# "Deployment" section for the required one-time Pages setting.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,26 +37,52 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build
-        run: npm run build
+        run: |
+          npm run build
+          touch dist/.nojekyll
 
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Publish dist/ to gh-pages root (preserving pr-preview/ subfolders)
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: dist
+          # Two workflows push to this branch independently (this one on every
+          # main push, pr-preview.yml on every PR event), so a concurrent push
+          # can make ours non-fast-forward; retry against the latest tip rather
+          # than clobbering whatever the other workflow just published.
+          for attempt in 1 2 3 4 5; do
+            rm -rf /tmp/gh-pages-deploy
+            git worktree prune
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+            if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+              git fetch origin gh-pages
+              git worktree add -B gh-pages /tmp/gh-pages-deploy origin/gh-pages
+            else
+              git worktree add --orphan -b gh-pages /tmp/gh-pages-deploy
+            fi
+
+            find /tmp/gh-pages-deploy -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+            cp -r dist/. /tmp/gh-pages-deploy/
+
+            if (
+              cd /tmp/gh-pages-deploy
+              git add -A
+              if git diff --cached --quiet; then
+                echo "Nothing to deploy"
+                exit 0
+              fi
+              git commit -q -m "Deploy ${GITHUB_SHA::7} to gh-pages"
+              git push origin gh-pages
+            ); then
+              git worktree remove --force /tmp/gh-pages-deploy
+              exit 0
+            fi
+
+            git worktree remove --force /tmp/gh-pages-deploy || true
+            echo "Push attempt $attempt failed, retrying..."
+            sleep $((attempt * 3))
+          done
+
+          echo "Failed to push to gh-pages after retries" >&2
+          exit 1
