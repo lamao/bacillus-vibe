@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scaleLinePoints } from '../../src/ui/chart';
+import { scaleDomain, scaleLinePoints } from '../../src/ui/chart';
 
 describe('scaleLinePoints', () => {
   it('returns an empty string for no values', () => {
@@ -29,5 +29,15 @@ describe('scaleLinePoints', () => {
 
   it('treats a maxValue of 0 as 1 to avoid dividing by zero', () => {
     expect(() => scaleLinePoints([0, 0], 100, 100, 10, 0)).not.toThrow();
+  });
+});
+
+describe('scaleDomain', () => {
+  it('pads maxValue by the same headroom scaleLinePoints plots against', () => {
+    expect(scaleDomain(10)).toBeCloseTo(11);
+  });
+
+  it('floors at 1 (pre-headroom) so an all-zero series has a sane domain', () => {
+    expect(scaleDomain(0)).toBeCloseTo(1.1);
   });
 });

@@ -1,6 +1,6 @@
 import { ALL_SUBSTANCES, PHYSICAL_SUBSTANCES, Substance } from '../engine/types';
 import { AverageRatios } from './averages';
-import { scaleLinePoints } from './chart';
+import { scaleDomain, scaleLinePoints } from './chart';
 import { MutationStats } from './mutations';
 import { SUBSTANCE_COLORS } from './renderer';
 import { StatCounts } from './stats';
@@ -33,8 +33,11 @@ const AXIS_LABEL_COLOR = '#5b6376';
 /**
  * Titles of the drawer's paged-carousel tabs, in display order: Population (#38), then
  * Consume/Produce/Toxin/Composition — all four per-substance breakdowns of the
- * population, grouped together — followed by Averages (#39), Births & deaths (#40),
- * and Mutations (#80).
+ * population, grouped together — followed by Averages (#39), Births & deaths (#40), and
+ * Avg/Max mutations (#80). The mutation tab is split in two (rather than one "Mutations"
+ * tab with all 4 lines) because the average and max of a counter that only grows can
+ * diverge by orders of magnitude over a long run — one shared axis would flatten the
+ * average line into the bottom of the chart.
  */
 const PAGE_TITLES = [
   'Population',
@@ -44,7 +47,8 @@ const PAGE_TITLES = [
   'Composition',
   'Averages',
   'Births & deaths',
-  'Mutations',
+  'Avg mutations',
+  'Max mutations',
 ] as const;
 
 /**
@@ -79,17 +83,25 @@ const BIRTHS_DEATHS_LINES: { label: string; color: string; value: (rate: BirthsD
 ];
 
 /**
- * The Mutations tab's four lines (#80): average and max of each DNA mutation counter
- * across the population. Unlike Averages' fixed 0-1 ratios, mutation counts only grow
- * and have no natural ceiling, so (like Births & deaths) this chart autoscales to the
- * window's own max rather than a fixed axis.
+ * The Avg/Max mutations tabs' lines (#80): average and max of each DNA mutation counter
+ * across the population, split across two tabs (see {@link PAGE_TITLES}) since they can
+ * be of very different scale over a long run. Like Births & deaths, mutation counts only
+ * grow and have no natural ceiling, so both charts autoscale to their own window's max
+ * rather than sharing a fixed axis.
  */
-const MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
+const AVG_MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
   { label: 'Avg instruction mutations', color: '#4f8cff', value: (mutations) => mutations.avgInstructionMutations },
-  { label: 'Max instruction mutations', color: '#1d4ed8', value: (mutations) => mutations.maxInstructionMutations },
   { label: 'Avg trait mutations', color: '#f472b6', value: (mutations) => mutations.avgTraitMutations },
+];
+const MAX_MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
+  { label: 'Max instruction mutations', color: '#1d4ed8', value: (mutations) => mutations.maxInstructionMutations },
   { label: 'Max trait mutations', color: '#be185d', value: (mutations) => mutations.maxTraitMutations },
 ];
+
+/** One decimal place for a fractional average, a bare integer otherwise — keeps the mutation tabs' axis labels compact either way. */
+function formatMutationAxisValue(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
+}
 
 /**
  * The docked-bottom stats widget (#38): a collapsed bar (total + per-substance chips)
@@ -256,8 +268,8 @@ export class StatsDrawer {
     const samples = this.history.window(this.selectedWindow);
     const latestTick = samples[samples.length - 1]?.tick ?? -1;
     // Population/Consume/Produce/Toxin's line sets can each change (which substances are
-    // currently present); Composition, Averages, and Births & deaths always draw the same
-    // fixed lines, so their signature needs nothing extra.
+    // currently present); Composition, Averages, Births & deaths, and Avg/Max mutations
+    // always draw the same fixed lines, so their signature needs nothing extra.
     const presentKey = (substances: readonly Substance[], byField: ReadonlyMap<Substance, number>): string =>
       substances.filter((substance) => (byField.get(substance) ?? 0) > 0).join(',');
     const pageKeys: Partial<Record<number, string>> = {
@@ -302,7 +314,10 @@ export class StatsDrawer {
         this.renderBirthsDeathsChart(samples);
         break;
       case 7:
-        this.renderMutationsChart(samples);
+        this.renderMutationLinesChart(samples, AVG_MUTATION_LINES);
+        break;
+      case 8:
+        this.renderMutationLinesChart(samples, MAX_MUTATION_LINES);
         break;
     }
   }
@@ -369,22 +384,39 @@ export class StatsDrawer {
     }
   }
 
-  private renderMutationsChart(samples: StatsSample[]): void {
+  /**
+   * Shared renderer for the Avg/Max mutations tabs: autoscales to `lines`' own max (each
+   * tab only sees its own 2 lines, not all 4 — see {@link PAGE_TITLES}'s note on why avg
+   * and max are split), and labels the gridlines with the values they actually represent
+   * so the two charts' very different scales are legible without a shared/fixed axis.
+   */
+  private renderMutationLinesChart(
+    samples: StatsSample[],
+    lines: { label: string; color: string; value: (mutations: MutationStats) => number }[],
+  ): void {
     const maxValue = samples.reduce(
-      (max, sample) =>
-        Math.max(
-          max,
-          sample.mutations.avgInstructionMutations,
-          sample.mutations.maxInstructionMutations,
-          sample.mutations.avgTraitMutations,
-          sample.mutations.maxTraitMutations,
-        ),
+      (max, sample) => Math.max(max, ...lines.map((line) => line.value(sample.mutations))),
       0,
     );
-    for (const line of MUTATION_LINES) {
+    this.renderYAxisReferenceLabels(maxValue, formatMutationAxisValue);
+    for (const line of lines) {
       const values = samples.map((s) => line.value(s.mutations));
       this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxValue), line.color, 2));
       this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  /**
+   * Draws one numeric label per gridline, evenly spanning `[0, domain]` top-to-bottom —
+   * `domain` (not the raw `maxValue`) since that's the actual axis top `scaleLinePoints`
+   * plots against, headroom included, so a label matches where its gridline really sits.
+   */
+  private renderYAxisReferenceLabels(maxValue: number, format: (value: number) => string): void {
+    const domain = scaleDomain(maxValue);
+    for (let i = 0; i < GRIDLINE_COUNT; i++) {
+      const y = CHART_MARGIN + (i / (GRIDLINE_COUNT - 1)) * (CHART_HEIGHT - 2 * CHART_MARGIN);
+      const value = domain * (1 - i / (GRIDLINE_COUNT - 1));
+      this.chartEl.appendChild(this.axisLabel(y + 4, format(value)));
     }
   }
 
