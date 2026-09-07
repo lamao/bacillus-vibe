@@ -191,31 +191,19 @@ describe('mutateDNA "behavior" mutation operators', () => {
     expectOnlyState0Changed(parent, child);
   });
 
-  it('rerollAction can land on a Produce category, with a freshly rolled mode', () => {
+  // The 8-item pool (TowardConsume excluded): AwayFromToxin, TowardOpenSpace, Random,
+  // Hold, Release, Hold, Split, Rest — indices 5-7 land on Produce/Hold, Split, and Rest
+  // respectively; each case below only differs in which pool index the action pick lands on.
+  it.each([
+    { landsOn: 'Produce', pick: 0.7, expected: { type: 'Produce', mode: 'Hold' } },
+    { landsOn: 'Split', pick: 0.8, expected: { type: 'Split', mode: 'Attempt' } },
+    { landsOn: 'Rest', pick: 0.9, expected: { type: 'Rest' } },
+  ])('rerollAction can land on $landsOn', ({ pick, expected }) => {
     const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; action pick(0.7) -> floor(0.7*8)=5 -> 'Produce'/'Hold'
-    // (pool, TowardConsume excluded: AwayFromToxin, TowardOpenSpace, Random, Hold, Release, Hold, Split, Rest).
-    const rng = new MockRNG([0, 0.9, 0, 0, 0.7]);
+    // operator index 0 -> 'rerollAction'; action pick(pick) -> floor(pick*8) into the pool above.
+    const rng = new MockRNG([0, 0.9, 0, 0, pick]);
     const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Produce', mode: 'Hold' } });
-    expectOnlyState0Changed(parent, child);
-  });
-
-  it('rerollAction can land on a Split category, which has no mode to roll', () => {
-    const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; action pick(0.8) -> floor(0.8*8)=6 -> 'Split'.
-    const rng = new MockRNG([0, 0.9, 0, 0, 0.8]);
-    const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Split', mode: 'Attempt' } });
-    expectOnlyState0Changed(parent, child);
-  });
-
-  it("rerollAction can land on Rest", () => {
-    const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; action pick(0.9) -> floor(0.9*8)=7 -> 'Rest'.
-    const rng = new MockRNG([0, 0.9, 0, 0, 0.9]);
-    const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Rest' } });
+    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: expected });
     expectOnlyState0Changed(parent, child);
   });
 
