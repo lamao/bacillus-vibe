@@ -38,6 +38,13 @@ describe('randomDNA', () => {
     expect(d.behavior).toEqual(starterInstructionMatrix());
   });
 
+  it('starts a founding genome with both mutation counters at 0, since it is generation zero', () => {
+    const rng = new MockRNG([0.1, 0.2, 0.3, 0.4]);
+    const d = randomDNA(rng);
+    expect(d.instructionMutations).toBe(0);
+    expect(d.traitMutations).toBe(0);
+  });
+
   it('uses a given behavior matrix instead of the starter one, when passed explicitly', () => {
     const rng = new MockRNG([0.1, 0.2, 0.3, 0.4]);
     const customBehavior = randomInstructionMatrix(new MockRNG([0.5]));
@@ -84,7 +91,7 @@ describe('mutateDNA', () => {
     const parent = dna({ body: 'Blue', consume: 'Green', produce: 'Yellow', toxin: 'Red' });
     // next() sequence: [0] mutation roll (succeeds), [0] category roll (forced to
     // "point trait" by ratio=0, value irrelevant), [0] trait pick -> 'body' (4 point
-    // traits, floor(0*4)=0), [0.3] new substance pick -> 'Green', differs from 'Blue'.
+    // traits, floor(0*4)=0), [0.3] new substance pick -> 'Yellow' (pool excludes 'Blue').
     const rng = new MockRNG([0, 0, 0, 0.3]);
     const child = mutateDNA(parent, rng, 1, 0);
     const traits: (keyof typeof parent)[] = ['body', 'consume', 'produce', 'toxin'];
@@ -125,6 +132,35 @@ describe('mutateDNA', () => {
   });
 });
 
+describe('mutateDNA mutation counters (#80)', () => {
+  it('copies both counters unchanged when the mutation roll fails', () => {
+    const parent = dna({ instructionMutations: 4, traitMutations: 9 });
+    const rng = new MockRNG([0.5]); // 0.5 >= mutationRate(0.01) => no mutation.
+    const child = mutateDNA(parent, rng, 0.01, 0.2);
+    expect(child.instructionMutations).toBe(4);
+    expect(child.traitMutations).toBe(9);
+  });
+
+  it('increments only traitMutations, from whatever count the parent already carried, on a point-trait mutation', () => {
+    const parent = dna({ body: 'Blue', instructionMutations: 4, traitMutations: 9 });
+    // behaviorMutationRatio=0 forces the point-trait branch; trait pick 0 -> 'body'; substance pick 0 -> 'Green'.
+    const rng = new MockRNG([0, 0, 0, 0]);
+    const child = mutateDNA(parent, rng, 1, 0);
+    expect(child.traitMutations).toBe(10);
+    expect(child.instructionMutations).toBe(4);
+  });
+
+  it('increments only instructionMutations, from whatever count the parent already carried, on a behavior mutation', () => {
+    const parent = dna({ behavior: starterInstructionMatrix(), instructionMutations: 4, traitMutations: 9 });
+    // behaviorMutationRatio=1 forces the behavior branch; state pick 0, operator pick 0 -> 'rerollAction';
+    // action pick 0 -> the pool's first entry once the starter's own action is excluded.
+    const rng = new MockRNG([0, 0.9, 0, 0, 0]);
+    const child = mutateDNA(parent, rng, 1, 1);
+    expect(child.instructionMutations).toBe(5);
+    expect(child.traitMutations).toBe(9);
+  });
+});
+
 describe('mutateDNA "behavior" mutation operators', () => {
   // Every case below drives mutateDNA(parent, rng, 1, 1) with a parent using the
   // starter matrix. behaviorMutationRatio=1 forces the category roll to always land
@@ -141,64 +177,71 @@ describe('mutateDNA "behavior" mutation operators', () => {
     }
   }
 
-  it('rerollAction swaps state 0\'s action for a random category, leaving its test untouched', () => {
+  // rerollAction now excludes state 0's current action (Move/TowardConsume) from the
+  // 9-action pool before picking, guaranteeing a real change; the starter's own action
+  // is never a candidate, so the pool actually drawn from has 8 entries.
+  it("rerollAction swaps state 0's action, guaranteed to differ, and can land on a different mode of the same category", () => {
     const parent = behaviorParent();
     // operator index 0 -> 'rerollAction' (pick(0) -> floor(0*5)=0);
-    // action category pick(0.9) -> floor(0.9*4)=3 -> 'Rest' (no further draw, unlike Move/Produce).
+    // action pick(0) -> floor(0*8)=0 -> 'AwayFromToxin', the pool's first entry once
+    // 'TowardConsume' (the starter's current mode) is excluded.
+    const rng = new MockRNG([0, 0.9, 0, 0, 0]);
+    const child = mutateDNA(parent, rng, 1, 1);
+    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Move', mode: 'AwayFromToxin' } });
+    expectOnlyState0Changed(parent, child);
+  });
+
+  it('rerollAction can land on a Produce category, with a freshly rolled mode', () => {
+    const parent = behaviorParent();
+    // operator index 0 -> 'rerollAction'; action pick(0.7) -> floor(0.7*8)=5 -> 'Produce'/'Hold'
+    // (pool, TowardConsume excluded: AwayFromToxin, TowardOpenSpace, Random, Hold, Release, Hold, Split, Rest).
+    const rng = new MockRNG([0, 0.9, 0, 0, 0.7]);
+    const child = mutateDNA(parent, rng, 1, 1);
+    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Produce', mode: 'Hold' } });
+    expectOnlyState0Changed(parent, child);
+  });
+
+  it('rerollAction can land on a Split category, which has no mode to roll', () => {
+    const parent = behaviorParent();
+    // operator index 0 -> 'rerollAction'; action pick(0.8) -> floor(0.8*8)=6 -> 'Split'.
+    const rng = new MockRNG([0, 0.9, 0, 0, 0.8]);
+    const child = mutateDNA(parent, rng, 1, 1);
+    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Split', mode: 'Attempt' } });
+    expectOnlyState0Changed(parent, child);
+  });
+
+  it("rerollAction can land on Rest", () => {
+    const parent = behaviorParent();
+    // operator index 0 -> 'rerollAction'; action pick(0.9) -> floor(0.9*8)=7 -> 'Rest'.
     const rng = new MockRNG([0, 0.9, 0, 0, 0.9]);
     const child = mutateDNA(parent, rng, 1, 1);
     expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Rest' } });
     expectOnlyState0Changed(parent, child);
   });
 
-  it('rerollAction can land on a Split category, which has no mode to roll', () => {
-    const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; category pick(0.5) -> floor(0.5*4)=2 -> 'Split' (no further draw).
-    const rng = new MockRNG([0, 0.9, 0, 0, 0.5]);
-    const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Split', mode: 'Attempt' } });
-    expectOnlyState0Changed(parent, child);
-  });
-
-  it('rerollAction can land on a Move category, which also rolls a mode', () => {
-    const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; category pick(0) -> floor(0*4)=0 -> 'Move';
-    // mode pick(0.9) -> floor(0.9*5)=4 -> 'Hold'.
-    const rng = new MockRNG([0, 0.9, 0, 0, 0, 0.9]);
-    const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Move', mode: 'Hold' } });
-    expectOnlyState0Changed(parent, child);
-  });
-
-  it('rerollAction can land on a Produce category, which also rolls a mode', () => {
-    const parent = behaviorParent();
-    // operator index 0 -> 'rerollAction'; category pick(0.3) -> floor(0.3*4)=1 -> 'Produce';
-    // mode pick(0.9) -> floor(0.9*2)=1 -> 'Hold'.
-    const rng = new MockRNG([0, 0.9, 0, 0, 0.3, 0.9]);
-    const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Produce', mode: 'Hold' } });
-    expectOnlyState0Changed(parent, child);
-  });
-
-  it("rerollMode keeps state 0's Move category but picks a fresh mode", () => {
+  it("rerollMode keeps state 0's Move category but picks a fresh mode, excluding the current one", () => {
     const parent = behaviorParent();
     // operator index 1 -> 'rerollMode' (pick(0.3) -> floor(0.3*5)=1);
-    // mode pick(0.9) -> floor(0.9*5)=4 -> 'Hold' (differs from the starter's 'TowardConsume').
+    // mode pick(0.9) -> floor(0.9*4)=3 -> 'Hold' (starter's 'TowardConsume' excluded from the 4-mode pool).
     const rng = new MockRNG([0, 0.9, 0, 0.3, 0.9]);
     const child = mutateDNA(parent, rng, 1, 1);
     expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Move', mode: 'Hold' } });
     expectOnlyState0Changed(parent, child);
   });
 
-  it("rerollMode is a no-op for a Split state, which has only one mode", () => {
+  it("never selects rerollMode for a Split state, which has no alternate mode to reroll into", () => {
     const splitBehavior = starterInstructionMatrix().map((instruction, i) =>
       i === 0 ? { ...instruction, action: { type: 'Split' as const, mode: 'Attempt' as const } } : instruction,
     );
     const parent = dna({ behavior: splitBehavior });
-    // operator index 1 -> 'rerollMode'; Split has one mode, so no further draw happens.
-    const rng = new MockRNG([0, 0.9, 0, 0.3]);
+    // Split has no alternate mode, so rerollMode is filtered out of the operator pool,
+    // leaving ['rerollAction', 'rerollSensor', 'nudgeThreshold', 'rerollJumpOffset'] (4 items);
+    // operator pick(0.3) -> floor(0.3*4)=1 -> 'rerollSensor' (index 1 in the full 5-operator
+    // list would have been 'rerollMode' — proof the exclusion actually took effect);
+    // sensor pick(0) -> floor(0*6)=0 -> 'FoodDist', the starter's own 'ToxinDist' excluded.
+    const rng = new MockRNG([0, 0.9, 0, 0.3, 0]);
     const child = mutateDNA(parent, rng, 1, 1);
-    expect(child.behavior[0]).toEqual(parent.behavior[0]);
+    expect(child.behavior[0]).toEqual({ ...parent.behavior[0], sensor: 'FoodDist' });
     expectOnlyState0Changed(parent, child);
   });
 
@@ -207,7 +250,8 @@ describe('mutateDNA "behavior" mutation operators', () => {
       i === 0 ? { ...instruction, action: { type: 'Produce' as const, mode: 'Release' as const } } : instruction,
     );
     const parent = dna({ behavior: produceBehavior });
-    // operator index 1 -> 'rerollMode'; mode pick(0.9) -> floor(0.9*2)=1 -> 'Hold'.
+    // operator index 1 -> 'rerollMode'; Produce has only 2 modes, so excluding 'Release'
+    // leaves a single candidate ('Hold') regardless of the next roll's value.
     const rng = new MockRNG([0, 0.9, 0, 0.3, 0.9]);
     const child = mutateDNA(parent, rng, 1, 1);
     expect(child.behavior[0]).toEqual({ ...parent.behavior[0], action: { type: 'Produce', mode: 'Hold' } });
@@ -258,21 +302,27 @@ describe('mutateDNA category split (behaviorMutationRatio)', () => {
   it('routes to the behavior branch when the category roll is below the ratio', () => {
     const parent = dna({ body: 'Blue', behavior: starterInstructionMatrix() });
     // mutation roll 0 (succeeds); category roll 0.1 < ratio 0.2 -> behavior branch;
-    // state pick 0, operator pick 0 -> 'rerollAction'; action category 0.9 -> 'Rest'.
+    // state pick 0, operator pick 0 -> 'rerollAction'; action pick 0.9 -> floor(0.9*8)=7 -> 'Rest'
+    // (TowardConsume, the starter's own mode, excluded from the 8-item action pool).
     const rng = new MockRNG([0, 0.1, 0, 0, 0.9]);
     const child = mutateDNA(parent, rng, 1, 0.2);
     expect(child.body).toBe('Blue');
     expect(child.behavior[0]).not.toEqual(parent.behavior[0]);
+    expect(child.instructionMutations).toBe(1);
+    expect(child.traitMutations).toBe(0);
   });
 
   it('routes to the point-trait branch when the category roll is at or above the ratio', () => {
     const parent = dna({ body: 'Blue', behavior: starterInstructionMatrix() });
     // mutation roll 0 (succeeds); category roll 0.2 >= ratio 0.2 -> point-trait branch;
-    // trait pick 0 -> 'body' (floor(0*4)=0); substance pick 0.3 -> 'Green'.
+    // trait pick 0 -> 'body' (floor(0*4)=0); substance pick 0.3 -> 'Yellow'
+    // (floor(0.3*4)=1 into ['Green','Yellow','White','Red'], 'Blue' excluded).
     const rng = new MockRNG([0, 0.2, 0, 0.3]);
     const child = mutateDNA(parent, rng, 1, 0.2);
-    expect(child.body).toBe('Green');
+    expect(child.body).toBe('Yellow');
     expect(child.behavior).toEqual(parent.behavior);
+    expect(child.instructionMutations).toBe(0);
+    expect(child.traitMutations).toBe(1);
   });
 });
 

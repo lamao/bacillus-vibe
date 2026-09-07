@@ -21,6 +21,10 @@ export interface DNA {
   toxin: Substance;
   /** This organic's finite-state behavior program; see InstructionMatrix below. */
   behavior: InstructionMatrix;
+  /** Cumulative count of `behavior` mutations inherited across generations since the founding genome (0 for founding organics). */
+  instructionMutations: number;
+  /** Cumulative count of body/consume/produce/toxin mutations inherited across generations since the founding genome (0 for founding organics). */
+  traitMutations: number;
 }
 
 export interface Mineral {

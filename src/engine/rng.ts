@@ -60,3 +60,15 @@ export class SeededRNG implements RNG {
 export function pick<T>(rng: RNG, items: readonly T[]): T {
   return items[rng.int(items.length)];
 }
+
+/**
+ * Picks uniformly from `items` with `exclude` filtered out first, so the result is
+ * guaranteed to differ from it — used by mutation operators (#80) that must always
+ * actually change something rather than occasionally rerolling into the same value.
+ * Callers are expected to only use this where `items` has multiple alternatives besides
+ * `exclude`; an `items` that filters down to empty is a caller bug, not a runtime case
+ * to guard against here.
+ */
+export function pickExcluding<T>(rng: RNG, items: readonly T[], exclude: T, eq: (a: T, b: T) => boolean = (a, b) => a === b): T {
+  return pick(rng, items.filter((item) => !eq(item, exclude)));
+}

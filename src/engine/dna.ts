@@ -1,4 +1,4 @@
-import { RNG, pick } from './rng';
+import { pick, pickExcluding, RNG } from './rng';
 import {
   ALL_SUBSTANCES,
   Action,
@@ -39,6 +39,9 @@ export function randomDNA(rng: RNG, behavior: InstructionMatrix = starterInstruc
     produce: randomPhysicalSubstance(rng),
     toxin: randomPhysicalSubstance(rng),
     behavior,
+    // Founding organics are generation zero — this DNA wasn't produced by a mutation.
+    instructionMutations: 0,
+    traitMutations: 0,
   };
 }
 
@@ -57,6 +60,12 @@ export function randomDNA(rng: RNG, behavior: InstructionMatrix = starterInstruc
  * 2. Within whichever category was picked, one variable is chosen uniformly at
  *    random: one of the 4 point traits, or (for behavior) one instruction-matrix
  *    state and one mutation operator, exactly as before.
+ *
+ * The child's `instructionMutations`/`traitMutations` counters start as a copy of the
+ * parent's and, when a mutation actually happens, exactly one of the two is
+ * incremented — matching whichever category was picked (#80). Every mutation
+ * operator below is guaranteed to change something (see the exclude-and-pick helpers
+ * it calls), so a mutation event and a counter increment always go together.
  */
 export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number, behaviorMutationRatio: number): DNA {
   const child: DNA = { ...parent };
@@ -65,21 +74,23 @@ export function mutateDNA(parent: DNA, rng: RNG, mutationRate: number, behaviorM
   }
   if (rng.next() < behaviorMutationRatio) {
     child.behavior = mutateBehavior(parent.behavior, rng);
+    child.instructionMutations = parent.instructionMutations + 1;
     return child;
   }
+  child.traitMutations = parent.traitMutations + 1;
   const trait: PointTrait = pick(rng, POINT_TRAITS);
   switch (trait) {
     case 'body':
-      child.body = randomPhysicalSubstance(rng);
+      child.body = pickExcluding(rng, PHYSICAL_SUBSTANCES, parent.body);
       break;
     case 'consume':
-      child.consume = randomConsumeSubstance(rng);
+      child.consume = pickExcluding(rng, ALL_SUBSTANCES, parent.consume);
       break;
     case 'produce':
-      child.produce = randomPhysicalSubstance(rng);
+      child.produce = pickExcluding(rng, PHYSICAL_SUBSTANCES, parent.produce);
       break;
     case 'toxin':
-      child.toxin = randomPhysicalSubstance(rng);
+      child.toxin = pickExcluding(rng, PHYSICAL_SUBSTANCES, parent.toxin);
       break;
   }
   return child;
@@ -90,7 +101,7 @@ const MOVE_MODES: readonly MoveMode[] = ['TowardConsume', 'AwayFromToxin', 'Towa
 const PRODUCE_MODES: readonly ProduceMode[] = ['Release', 'Hold'];
 const SENSORS: readonly Sensor[] = ['FoodDist', 'ToxinDist', 'EnergyRatio', 'SizeRatio', 'Age', 'Crowding', 'Random'];
 
-/** Five operators, per #5 §5, each picked with equal probability and applied to exactly one state. */
+/** Five operators, per #5 §5, each picked with equal probability (barring `rerollMode`'s exclusion below) and applied to exactly one state. */
 const BEHAVIOR_MUTATION_OPERATORS = ['rerollAction', 'rerollMode', 'rerollSensor', 'nudgeThreshold', 'rerollJumpOffset'] as const;
 type BehaviorMutationOperator = (typeof BEHAVIOR_MUTATION_OPERATORS)[number];
 
@@ -111,13 +122,45 @@ function randomAction(rng: RNG): Action {
   }
 }
 
-/** Keeps `action`'s category, picking a fresh mode. Split has one mode and Rest has none, so both are no-ops. */
+/** Every distinct concrete action value (5 Move modes + 2 Produce modes + Split + Rest = 9), for {@link applyBehaviorOperator}'s `rerollAction` to exclude-and-pick from so a reroll is guaranteed to actually change the action. */
+const ALL_ACTIONS: readonly Action[] = [
+  ...MOVE_MODES.map((mode): Action => ({ type: 'Move', mode })),
+  ...PRODUCE_MODES.map((mode): Action => ({ type: 'Produce', mode })),
+  { type: 'Split', mode: 'Attempt' },
+  { type: 'Rest' },
+];
+
+function actionsEqual(a: Action, b: Action): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === 'Move' && b.type === 'Move') return a.mode === b.mode;
+  if (a.type === 'Produce' && b.type === 'Produce') return a.mode === b.mode;
+  return true; // Split (one mode) and Rest (no fields) always match once types match.
+}
+
+/** Whether `action`'s category has more than one mode to reroll into — Move and Produce do, Split and Rest don't. */
+function hasAlternateMode(action: Action): boolean {
+  return action.type === 'Move' || action.type === 'Produce';
+}
+
+/**
+ * Operators available for mutating `instruction`: all 5, unless its action has no
+ * alternate mode (Split/Rest), in which case `rerollMode` — which could only ever
+ * reroll into what's already there — is filtered out so every mutation still lands
+ * on an operator that can deliver a real change (#80).
+ */
+function operatorsFor(instruction: Instruction): readonly BehaviorMutationOperator[] {
+  return hasAlternateMode(instruction.action)
+    ? BEHAVIOR_MUTATION_OPERATORS
+    : BEHAVIOR_MUTATION_OPERATORS.filter((op) => op !== 'rerollMode');
+}
+
+/** Keeps `action`'s category, picking a mode guaranteed to differ from its current one. Only called for Move/Produce — see {@link operatorsFor}. */
 function rerollMode(action: Action, rng: RNG): Action {
   switch (action.type) {
     case 'Move':
-      return { type: 'Move', mode: pick(rng, MOVE_MODES) };
+      return { type: 'Move', mode: pickExcluding(rng, MOVE_MODES, action.mode) };
     case 'Produce':
-      return { type: 'Produce', mode: pick(rng, PRODUCE_MODES) };
+      return { type: 'Produce', mode: pickExcluding(rng, PRODUCE_MODES, action.mode) };
     case 'Split':
     case 'Rest':
       return action;
@@ -135,6 +178,12 @@ function gaussianNudge(rng: RNG, stdDev: number): number {
 function randomJumpOffset(rng: RNG): number {
   return rng.int(2 * INSTRUCTION_MATRIX_SIZE + 1) - INSTRUCTION_MATRIX_SIZE;
 }
+
+/** Every value a jump offset can take, for `rerollJumpOffset`'s exclude-and-pick. */
+const JUMP_OFFSET_RANGE: readonly number[] = Array.from(
+  { length: 2 * INSTRUCTION_MATRIX_SIZE + 1 },
+  (_, i) => i - INSTRUCTION_MATRIX_SIZE,
+);
 
 const COMPARATORS: readonly Comparator[] = ['<', '>='];
 
@@ -161,22 +210,22 @@ export function randomInstructionMatrix(rng: RNG): InstructionMatrix {
 function applyBehaviorOperator(operator: BehaviorMutationOperator, instruction: Instruction, rng: RNG): Instruction {
   switch (operator) {
     case 'rerollAction':
-      return { ...instruction, action: randomAction(rng) };
+      return { ...instruction, action: pickExcluding(rng, ALL_ACTIONS, instruction.action, actionsEqual) };
     case 'rerollMode':
       return { ...instruction, action: rerollMode(instruction.action, rng) };
     case 'rerollSensor':
-      return { ...instruction, sensor: pick(rng, SENSORS) };
+      return { ...instruction, sensor: pickExcluding(rng, SENSORS, instruction.sensor) };
     case 'nudgeThreshold':
       return { ...instruction, threshold: instruction.threshold + gaussianNudge(rng, THRESHOLD_NUDGE_STDDEV) };
     case 'rerollJumpOffset':
-      return { ...instruction, jumpOffset: randomJumpOffset(rng) };
+      return { ...instruction, jumpOffset: pickExcluding(rng, JUMP_OFFSET_RANGE, instruction.jumpOffset) };
   }
 }
 
 /** Applies one randomly chosen mutation operator (per #5 §5) to exactly one randomly chosen state. */
 function mutateBehavior(behavior: InstructionMatrix, rng: RNG): InstructionMatrix {
   const stateIndex = rng.int(INSTRUCTION_MATRIX_SIZE);
-  const operator = pick(rng, BEHAVIOR_MUTATION_OPERATORS);
+  const operator = pick(rng, operatorsFor(behavior[stateIndex]));
   const next = [...behavior];
   next[stateIndex] = applyBehaviorOperator(operator, next[stateIndex], rng);
   return next;

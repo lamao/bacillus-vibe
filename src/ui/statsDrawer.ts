@@ -1,6 +1,7 @@
 import { ALL_SUBSTANCES, PHYSICAL_SUBSTANCES, Substance } from '../engine/types';
 import { AverageRatios } from './averages';
 import { scaleLinePoints } from './chart';
+import { MutationStats } from './mutations';
 import { SUBSTANCE_COLORS } from './renderer';
 import { StatCounts } from './stats';
 import { BirthsDeathsRate, StatsHistory, StatsSample, TIME_WINDOWS, TimeWindow } from './statsHistory';
@@ -32,9 +33,19 @@ const AXIS_LABEL_COLOR = '#5b6376';
 /**
  * Titles of the drawer's paged-carousel tabs, in display order: Population (#38), then
  * Consume/Produce/Toxin/Composition — all four per-substance breakdowns of the
- * population, grouped together — followed by Averages (#39) and Births & deaths (#40).
+ * population, grouped together — followed by Averages (#39), Births & deaths (#40),
+ * and Mutations (#80).
  */
-const PAGE_TITLES = ['Population', 'Consume', 'Produce', 'Toxin', 'Composition', 'Averages', 'Births & deaths'] as const;
+const PAGE_TITLES = [
+  'Population',
+  'Consume',
+  'Produce',
+  'Toxin',
+  'Composition',
+  'Averages',
+  'Births & deaths',
+  'Mutations',
+] as const;
 
 /**
  * The Composition tab's two lines. Organic is the exact same series as the Population
@@ -65,6 +76,19 @@ const AVERAGE_LINES: { label: string; color: string; value: (averages: AverageRa
 const BIRTHS_DEATHS_LINES: { label: string; color: string; value: (rate: BirthsDeathsRate) => number }[] = [
   { label: 'Births / sec', color: '#22c55e', value: (rate) => rate.births },
   { label: 'Deaths / sec', color: '#ef4444', value: (rate) => rate.deaths },
+];
+
+/**
+ * The Mutations tab's four lines (#80): average and max of each DNA mutation counter
+ * across the population. Unlike Averages' fixed 0-1 ratios, mutation counts only grow
+ * and have no natural ceiling, so (like Births & deaths) this chart autoscales to the
+ * window's own max rather than a fixed axis.
+ */
+const MUTATION_LINES: { label: string; color: string; value: (mutations: MutationStats) => number }[] = [
+  { label: 'Avg instruction mutations', color: '#4f8cff', value: (mutations) => mutations.avgInstructionMutations },
+  { label: 'Max instruction mutations', color: '#1d4ed8', value: (mutations) => mutations.maxInstructionMutations },
+  { label: 'Avg trait mutations', color: '#f472b6', value: (mutations) => mutations.avgTraitMutations },
+  { label: 'Max trait mutations', color: '#be185d', value: (mutations) => mutations.maxTraitMutations },
 ];
 
 /**
@@ -124,8 +148,8 @@ export class StatsDrawer {
     document.documentElement.style.setProperty('--stats-drawer-height', `${this.root.getBoundingClientRect().height}px`);
   }
 
-  /** Called once per animation frame with the latest population counts, averages, births/deaths rate, and tick. */
-  update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, tick: number): void {
+  /** Called once per animation frame with the latest population counts, averages, births/deaths rate, mutation load, and tick. */
+  update(counts: StatCounts, averages: AverageRatios, birthsDeaths: BirthsDeathsRate, mutations: MutationStats, tick: number): void {
     this.history.record({
       tick,
       total: counts.total,
@@ -136,6 +160,7 @@ export class StatsDrawer {
       byToxin: counts.byToxin,
       averages,
       birthsDeaths,
+      mutations,
     });
     this.renderBar(counts);
     if (this.expanded) this.renderChart(counts);
@@ -276,6 +301,9 @@ export class StatsDrawer {
       case 6:
         this.renderBirthsDeathsChart(samples);
         break;
+      case 7:
+        this.renderMutationsChart(samples);
+        break;
     }
   }
 
@@ -337,6 +365,25 @@ export class StatsDrawer {
     for (const line of BIRTHS_DEATHS_LINES) {
       const values = samples.map((s) => line.value(s.birthsDeaths));
       this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxRate), line.color, 2));
+      this.legendEl.appendChild(this.legendItem(line.color, line.label));
+    }
+  }
+
+  private renderMutationsChart(samples: StatsSample[]): void {
+    const maxValue = samples.reduce(
+      (max, sample) =>
+        Math.max(
+          max,
+          sample.mutations.avgInstructionMutations,
+          sample.mutations.maxInstructionMutations,
+          sample.mutations.avgTraitMutations,
+          sample.mutations.maxTraitMutations,
+        ),
+      0,
+    );
+    for (const line of MUTATION_LINES) {
+      const values = samples.map((s) => line.value(s.mutations));
+      this.chartEl.appendChild(this.polyline(scaleLinePoints(values, CHART_WIDTH, CHART_HEIGHT, CHART_MARGIN, maxValue), line.color, 2));
       this.legendEl.appendChild(this.legendItem(line.color, line.label));
     }
   }

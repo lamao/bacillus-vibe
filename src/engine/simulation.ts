@@ -163,6 +163,13 @@ export class Simulation {
     sim.totalBirths = state.totalBirths;
     sim.totalDeaths = state.totalDeaths;
     for (const entity of state.entities) {
+      // A save/export from before #80 has no mutation counters on its DNA; default them
+      // to 0 (generation zero, same as a founding organic) rather than leaving them
+      // `undefined` and breaking arithmetic (inspector display, population averages).
+      if (entity.kind === 'organic') {
+        entity.dna.instructionMutations ??= 0;
+        entity.dna.traitMutations ??= 0;
+      }
       sim.grid.set(entity.position.x, entity.position.y, entity);
     }
     return sim;

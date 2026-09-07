@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ZERO_AVERAGE_RATIOS } from '../../src/ui/averages';
+import { ZERO_MUTATION_STATS } from '../../src/ui/mutations';
 import { StatsHistory, StatsSample, ZERO_BIRTHS_DEATHS_RATE } from '../../src/ui/statsHistory';
 
 /** Builds a sample with empty substance breakdowns and zeroed averages/rates unless overridden, to keep tests focused on the field(s) under test. */
@@ -14,6 +15,7 @@ function sample(tick: number, total: number, minerals: number, overrides: Partia
     byToxin: new Map(),
     averages: ZERO_AVERAGE_RATIOS,
     birthsDeaths: ZERO_BIRTHS_DEATHS_RATE,
+    mutations: ZERO_MUTATION_STATS,
     ...overrides,
   };
 }
@@ -73,6 +75,13 @@ describe('StatsHistory', () => {
     const history = new StatsHistory();
     history.record(sample(1, 10, 42));
     expect(history.window(500)[0].minerals).toBe(42);
+  });
+
+  it('records the mutation stats alongside the population counts for each sample', () => {
+    const history = new StatsHistory();
+    const mutations = { avgInstructionMutations: 1.5, maxInstructionMutations: 4, avgTraitMutations: 0.5, maxTraitMutations: 2 };
+    history.record(sample(1, 10, 0, { mutations }));
+    expect(history.window(500)[0].mutations).toEqual(mutations);
   });
 
   it('records the consume/produce/toxin substance breakdowns alongside body composition for each sample', () => {
