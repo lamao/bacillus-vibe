@@ -611,7 +611,17 @@ for (const preset of SCENARIO_PRESETS) {
  * and a value to mean anything; picking a continuous field enables its heatmap
  * immediately, since the whole grid renders on the gradient with no value to choose.
  */
-const HIGHLIGHT_FIELD_ORDER: readonly HighlightField[] = ['body', 'consume', 'produce', 'toxin', 'age', 'size', 'energy'];
+const HIGHLIGHT_FIELD_ORDER: readonly HighlightField[] = [
+  'body',
+  'consume',
+  'produce',
+  'toxin',
+  'age',
+  'size',
+  'energy',
+  'instructionMutations',
+  'traitMutations',
+];
 const highlightFieldRows = new Map<HighlightField, HTMLButtonElement>();
 
 const setCategoricalHighlight = (field: CategoricalHighlightField, value: Substance): void => {
@@ -1390,8 +1400,16 @@ const renderInspector = (): void => {
         { label: 'Consume', value: entity.dna.consume, onClick: () => setCategoricalHighlight('consume', entity.dna.consume) },
         { label: 'Produce', value: entity.dna.produce, onClick: () => setCategoricalHighlight('produce', entity.dna.produce) },
         { label: 'Toxin', value: entity.dna.toxin, onClick: () => setCategoricalHighlight('toxin', entity.dna.toxin) },
-        { label: 'Instruction mutations', value: entity.dna.instructionMutations.toString() },
-        { label: 'Trait mutations', value: entity.dna.traitMutations.toString() },
+        {
+          label: 'Instruction mutations',
+          value: entity.dna.instructionMutations.toString(),
+          onClick: () => setContinuousHighlight('instructionMutations'),
+        },
+        {
+          label: 'Trait mutations',
+          value: entity.dna.traitMutations.toString(),
+          onClick: () => setContinuousHighlight('traitMutations'),
+        },
       );
     }
   }
@@ -1429,14 +1447,20 @@ const frame = (time: number): void => {
   if (latestSnapshot) {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
     lastTickCount = latestSnapshot.tickCount;
+    const mutations = computeMutationStats(latestSnapshot.entities);
     const activeHighlight: ActiveHighlight | null = engineSettings
-      ? { ...highlightState, maxAge: engineSettings.maxAge, maxSize: engineSettings.maxSize }
+      ? {
+          ...highlightState,
+          maxAge: engineSettings.maxAge,
+          maxSize: engineSettings.maxSize,
+          maxInstructionMutations: mutations.maxInstructionMutations,
+          maxTraitMutations: mutations.maxTraitMutations,
+        }
       : null;
     renderer.draw(latestSnapshot, activeHighlight);
     const averages = engineSettings
       ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
       : ZERO_AVERAGE_RATIOS;
-    const mutations = computeMutationStats(latestSnapshot.entities);
     statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, mutations, latestSnapshot.tickCount);
   }
   renderStats(counts);

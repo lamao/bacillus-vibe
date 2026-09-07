@@ -3,6 +3,7 @@ import {
   categoricalValueOf,
   continuousFieldMax,
   continuousValueOf,
+  HighlightNormalization,
   HighlightState,
   isCategoricalHighlightField,
 } from './highlight';
@@ -23,11 +24,8 @@ const HIGHLIGHT_MATCH_OUTLINE = '#facc15';
 /** Flat fill for an entity the active highlight condition excludes or doesn't match — the "gray-out" half of #78. */
 const HIGHLIGHT_DIM_COLOR = 'rgba(100, 116, 139, 0.35)';
 
-/** An active highlight condition plus the engine ceilings its heatmap fields normalize against. */
-export interface ActiveHighlight extends HighlightState {
-  maxAge: number;
-  maxSize: number;
-}
+/** An active highlight condition plus the ceilings its heatmap fields normalize against. */
+export interface ActiveHighlight extends HighlightState, HighlightNormalization {}
 
 /** Interpolates a heatmap color for t in [0,1]: cool blue at 0, through amber, to hot red at 1. */
 function heatmapColor(t: number): string {

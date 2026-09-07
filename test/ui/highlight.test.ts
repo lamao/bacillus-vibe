@@ -25,6 +25,8 @@ describe('isCategoricalHighlightField', () => {
     expect(isCategoricalHighlightField('age')).toBe(false);
     expect(isCategoricalHighlightField('size')).toBe(false);
     expect(isCategoricalHighlightField('energy')).toBe(false);
+    expect(isCategoricalHighlightField('instructionMutations')).toBe(false);
+    expect(isCategoricalHighlightField('traitMutations')).toBe(false);
   });
 });
 
@@ -58,7 +60,10 @@ describe('categoricalValueOf', () => {
 });
 
 describe('continuousValueOf', () => {
-  const org: Entity = organic({ x: 0, y: 0 }, { size: 900, energy: 400, age: 120 });
+  const org: Entity = organic(
+    { x: 0, y: 0 },
+    { size: 900, energy: 400, age: 120, dna: dna({ instructionMutations: 5, traitMutations: 2 }) },
+  );
   const min: Entity = mineral({ x: 1, y: 0 }, 'Green', 50);
 
   it('reads size for both organics and minerals', () => {
@@ -72,10 +77,17 @@ describe('continuousValueOf', () => {
     expect(continuousValueOf(min, 'age')).toBeNull();
     expect(continuousValueOf(min, 'energy')).toBeNull();
   });
+
+  it('reads mutation distances for organics, and returns null for minerals', () => {
+    expect(continuousValueOf(org, 'instructionMutations')).toBe(5);
+    expect(continuousValueOf(org, 'traitMutations')).toBe(2);
+    expect(continuousValueOf(min, 'instructionMutations')).toBeNull();
+    expect(continuousValueOf(min, 'traitMutations')).toBeNull();
+  });
 });
 
 describe('continuousFieldMax', () => {
-  const settings = { maxAge: 1500, maxSize: 2200 };
+  const settings = { maxAge: 1500, maxSize: 2200, maxInstructionMutations: 7, maxTraitMutations: 3 };
 
   it('normalizes age against maxAge', () => {
     expect(continuousFieldMax('age', settings)).toBe(1500);
@@ -84,5 +96,10 @@ describe('continuousFieldMax', () => {
   it('normalizes size and energy against maxSize', () => {
     expect(continuousFieldMax('size', settings)).toBe(2200);
     expect(continuousFieldMax('energy', settings)).toBe(2200);
+  });
+
+  it('normalizes mutation counters against the population max, not a fixed setting', () => {
+    expect(continuousFieldMax('instructionMutations', settings)).toBe(7);
+    expect(continuousFieldMax('traitMutations', settings)).toBe(3);
   });
 });

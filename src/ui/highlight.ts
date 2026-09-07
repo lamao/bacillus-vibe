@@ -3,13 +3,19 @@ import { Entity, Substance, substanceOf } from '../engine/types';
 /** DNA-keyed fields rendered as gray-out: everything but the matching value dims. */
 export type CategoricalHighlightField = 'body' | 'consume' | 'produce' | 'toxin';
 
-/** Fields rendered as a fixed-scale heatmap across the whole grid. */
-export type ContinuousHighlightField = 'age' | 'size' | 'energy';
+/** Fields rendered as a heatmap across the whole grid. */
+export type ContinuousHighlightField = 'age' | 'size' | 'energy' | 'instructionMutations' | 'traitMutations';
 
 export type HighlightField = CategoricalHighlightField | ContinuousHighlightField;
 
 export const CATEGORICAL_HIGHLIGHT_FIELDS: readonly CategoricalHighlightField[] = ['body', 'consume', 'produce', 'toxin'];
-export const CONTINUOUS_HIGHLIGHT_FIELDS: readonly ContinuousHighlightField[] = ['age', 'size', 'energy'];
+export const CONTINUOUS_HIGHLIGHT_FIELDS: readonly ContinuousHighlightField[] = [
+  'age',
+  'size',
+  'energy',
+  'instructionMutations',
+  'traitMutations',
+];
 
 export function isCategoricalHighlightField(field: HighlightField): field is CategoricalHighlightField {
   return (CATEGORICAL_HIGHLIGHT_FIELDS as readonly string[]).includes(field);
@@ -49,16 +55,50 @@ export function categoricalValueOf(entity: Entity, field: CategoricalHighlightFi
 
 /**
  * The entity's value for a continuous field, or null if the field has no meaning for
- * it — `age`/`energy` are organic-only; `size` applies to minerals too.
+ * it — `age`/`energy`/mutation counts are organic-only (mutations accrue on DNA, which
+ * minerals don't have); `size` applies to minerals too.
  */
 export function continuousValueOf(entity: Entity, field: ContinuousHighlightField): number | null {
   if (field === 'size') return entity.size;
-  return entity.kind === 'organic' ? entity[field] : null;
+  if (entity.kind !== 'organic') return null;
+  switch (field) {
+    case 'age':
+      return entity.age;
+    case 'energy':
+      return entity.energy;
+    case 'instructionMutations':
+      return entity.dna.instructionMutations;
+    case 'traitMutations':
+      return entity.dna.traitMutations;
+  }
 }
 
-/** Fixed normalization ceiling for a continuous field's heatmap, per the engine settings driving it. */
-export function continuousFieldMax(field: ContinuousHighlightField, settings: { maxAge: number; maxSize: number }): number {
-  return field === 'age' ? settings.maxAge : settings.maxSize;
+/**
+ * Ceilings a continuous field's heatmap normalizes against. `age`/`size`/`energy` use a
+ * fixed engine setting (not relative to the current population, per #78). Mutation counts
+ * (#78 follow-up: "mutation distance" from the founding genome) have no such fixed cap —
+ * they only ever grow — so they instead normalize against the current population's own
+ * max, recomputed each frame from the same counters `computeMutationStats` already tracks.
+ */
+export interface HighlightNormalization {
+  maxAge: number;
+  maxSize: number;
+  maxInstructionMutations: number;
+  maxTraitMutations: number;
+}
+
+export function continuousFieldMax(field: ContinuousHighlightField, normalization: HighlightNormalization): number {
+  switch (field) {
+    case 'age':
+      return normalization.maxAge;
+    case 'size':
+    case 'energy':
+      return normalization.maxSize;
+    case 'instructionMutations':
+      return normalization.maxInstructionMutations;
+    case 'traitMutations':
+      return normalization.maxTraitMutations;
+  }
 }
 
 export const HIGHLIGHT_FIELD_LABELS: Record<HighlightField, string> = {
@@ -69,4 +109,6 @@ export const HIGHLIGHT_FIELD_LABELS: Record<HighlightField, string> = {
   age: 'Age',
   size: 'Size',
   energy: 'Energy',
+  instructionMutations: 'Instruction mutations',
+  traitMutations: 'Trait mutations',
 };
