@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SeededRNG, pick } from '../../src/engine/rng';
+import { SeededRNG, pick, pickExcluding } from '../../src/engine/rng';
 import { MockRNG } from './mockRng';
 
 describe('SeededRNG', () => {
@@ -61,6 +61,28 @@ describe('pick', () => {
   it('selects the item at the RNG-derived index', () => {
     const rng = new MockRNG([0.5]);
     expect(pick(rng, ['a', 'b', 'c', 'd'])).toBe('c');
+  });
+});
+
+describe('pickExcluding', () => {
+  it('picks from the pool with the excluded value filtered out first', () => {
+    const rng = new MockRNG([0]);
+    // ['a', 'b', 'c', 'd'] with 'a' excluded -> ['b', 'c', 'd']; index 0 -> 'b'.
+    expect(pickExcluding(rng, ['a', 'b', 'c', 'd'], 'a')).toBe('b');
+  });
+
+  it('never returns the excluded value, across the whole index range', () => {
+    for (let i = 0; i < 4; i++) {
+      const rng = new MockRNG([i / 4]);
+      expect(pickExcluding(rng, ['a', 'b', 'c', 'd'], 'b')).not.toBe('b');
+    }
+  });
+
+  it('supports a custom equality function for non-primitive items', () => {
+    const rng = new MockRNG([0]);
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const result = pickExcluding(rng, items, { id: 1 }, (a, b) => a.id === b.id);
+    expect(result).toEqual({ id: 2 });
   });
 });
 

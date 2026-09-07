@@ -13,6 +13,7 @@ import {
 import { SCENARIO_PRESETS } from './engine/presets';
 import { Settings, TunableSettingKey } from './engine/settings';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
+import { computeMutationStats } from './ui/mutations';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
 import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
@@ -1259,6 +1260,8 @@ const renderInspector = (): void => {
         { label: 'Consume', value: entity.dna.consume },
         { label: 'Produce', value: entity.dna.produce },
         { label: 'Toxin', value: entity.dna.toxin },
+        { label: 'Instruction mutations', value: entity.dna.instructionMutations.toString() },
+        { label: 'Trait mutations', value: entity.dna.traitMutations.toString() },
       );
     }
   }
@@ -1300,7 +1303,8 @@ const frame = (time: number): void => {
     const averages = engineSettings
       ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
       : ZERO_AVERAGE_RATIOS;
-    statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, latestSnapshot.tickCount);
+    const mutations = computeMutationStats(latestSnapshot.entities);
+    statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, mutations, latestSnapshot.tickCount);
   }
   renderStats(counts);
   perfEl.textContent = formatPerf();

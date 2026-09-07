@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SeededRNG } from '../../src/engine/rng';
 import { defaultSettings } from '../../src/engine/settings';
-import { Simulation, SIMULATION_STATE_VERSION, tick } from '../../src/engine/simulation';
+import { Simulation, SIMULATION_STATE_VERSION, SimulationState, tick } from '../../src/engine/simulation';
 import { Instruction } from '../../src/engine/types';
 import { dna, emptyGrid, mineral, organic, place, testSettings } from './fixtures';
 import { MockRNG } from './mockRng';
@@ -209,6 +209,28 @@ describe('Simulation save/load (#29)', () => {
     expect(restored.tickCount).toBe(original.tickCount);
     expect(restored.totalBirths).toBe(original.totalBirths);
     expect(restored.totalDeaths).toBe(original.totalDeaths);
+  });
+
+  it("defaults a pre-#80 save's missing DNA mutation counters to 0 instead of leaving them undefined", () => {
+    const settings = testSettings();
+    const sim = new Simulation(settings, new SeededRNG(1));
+    sim.spawnOrganicAt({ x: 3, y: 3 }, dna());
+    const state = JSON.parse(JSON.stringify(sim.toState())) as SimulationState;
+    // Simulates a save made before #80 added these fields to DNA.
+    const organicEntity = state.entities.find((e) => e.kind === 'organic');
+    expect(organicEntity?.kind).toBe('organic');
+    if (organicEntity?.kind === 'organic') {
+      delete (organicEntity.dna as Partial<typeof organicEntity.dna>).instructionMutations;
+      delete (organicEntity.dna as Partial<typeof organicEntity.dna>).traitMutations;
+    }
+
+    const restored = Simulation.fromState(state);
+    const restoredOrganic = restored.grid.entities().find((e) => e.kind === 'organic');
+    expect(restoredOrganic?.kind).toBe('organic');
+    if (restoredOrganic?.kind === 'organic') {
+      expect(restoredOrganic.dna.instructionMutations).toBe(0);
+      expect(restoredOrganic.dna.traitMutations).toBe(0);
+    }
   });
 
   it("preserves the id counter so ids assigned after restore don't collide with the snapshot's entities", () => {
