@@ -1,5 +1,6 @@
 import {
   Action,
+  ALL_SUBSTANCES,
   Entity,
   INSTRUCTION_MATRIX_SIZE,
   MoveMode,
@@ -13,9 +14,19 @@ import {
 import { SCENARIO_PRESETS } from './engine/presets';
 import { Settings, TunableSettingKey } from './engine/settings';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
+import {
+  CategoricalHighlightField,
+  ContinuousHighlightField,
+  defaultHighlightState,
+  HIGHLIGHT_FIELD_LABELS,
+  HighlightField,
+  HighlightState,
+  isCategoricalHighlightField,
+  selectableSubstancesFor,
+} from './ui/highlight';
 import { computeMutationStats } from './ui/mutations';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
-import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { ActiveHighlight, Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
@@ -294,6 +305,9 @@ const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
 const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
+const menuHighlightOffBtn = document.querySelector<HTMLButtonElement>('#menu-highlight-off');
+const menuHighlightFieldsEl = document.querySelector<HTMLElement>('#menu-highlight-fields');
+const menuHighlightValuesEl = document.querySelector<HTMLElement>('#menu-highlight-values');
 const settingsPanelEl = document.querySelector<HTMLElement>('#settings-panel');
 const settingsPanelBackdropEl = document.querySelector<HTMLElement>('#settings-panel-backdrop');
 const settingsPanelCloseBtn = document.querySelector<HTMLButtonElement>('#settings-panel-close');
@@ -332,6 +346,9 @@ if (
   !menuDrawerToggle ||
   !menuLegendToggle ||
   !menuScenarioListEl ||
+  !menuHighlightOffBtn ||
+  !menuHighlightFieldsEl ||
+  !menuHighlightValuesEl ||
   !settingsPanelEl ||
   !settingsPanelBackdropEl ||
   !settingsPanelCloseBtn ||
@@ -413,6 +430,8 @@ type InspectedTarget = { type: 'entity'; id: number } | { type: 'cell'; position
 let inspectedTarget: InspectedTarget | null = null;
 /** Instruction matrix state tapped for detail in the inspector; reset whenever a new cell is inspected. */
 let selectedStateIndex: number | null = null;
+/** Cell-highlight condition (#78) — purely transient UI state, never serialized; resets to off implicitly on page reload since nothing persists it. */
+let highlightState: HighlightState = defaultHighlightState();
 
 // A ResizeObserver (rather than only window 'resize'/'orientationchange') tracks
 // canvas-wrap's actual box, so the canvas stays correctly sized even when layout
@@ -478,6 +497,7 @@ const closeControlsMenu = (): void => {
 const syncControlsMenu = (): void => {
   menuDrawerToggle.setAttribute('aria-checked', String(statsDrawer.isExpanded()));
   menuLegendToggle.setAttribute('aria-checked', String(!iconLegendEl.classList.contains('hidden')));
+  syncHighlightMenu();
 };
 
 const openControlsMenu = (): void => {
@@ -581,6 +601,117 @@ for (const preset of SCENARIO_PRESETS) {
   });
   menuScenarioListEl.appendChild(row);
 }
+
+/**
+ * Cell highlighting (#78): one active condition at a time, entered either via this
+ * "Highlight" menu group or by tapping a trait row in the inspector (see
+ * `setCategoricalHighlight`/`setContinuousHighlight`, wired into `renderInspector`
+ * below). Picking a categorical field alone doesn't enable highlighting yet — it just
+ * opens that field's value swatches — since a categorical condition needs both a field
+ * and a value to mean anything; picking a continuous field enables its heatmap
+ * immediately, since the whole grid renders on the gradient with no value to choose.
+ */
+const HIGHLIGHT_FIELD_ORDER: readonly HighlightField[] = [
+  'body',
+  'consume',
+  'produce',
+  'toxin',
+  'age',
+  'size',
+  'energy',
+  'instructionMutations',
+  'traitMutations',
+];
+const highlightFieldRows = new Map<HighlightField, HTMLButtonElement>();
+
+const setCategoricalHighlight = (field: CategoricalHighlightField, value: Substance): void => {
+  highlightState = { enabled: true, field, selectedValue: value };
+  syncHighlightMenu();
+};
+
+const setContinuousHighlight = (field: ContinuousHighlightField): void => {
+  highlightState = { enabled: true, field };
+  syncHighlightMenu();
+};
+
+/**
+ * Which field's swatches are currently built into `menuHighlightValuesEl`, so picking a
+ * value only updates `aria-checked` on the existing buttons rather than rebuilding them.
+ * Rebuilding on every pick would detach the just-clicked swatch mid-bubble (this handler
+ * runs before the document-level "click outside closes the menu" listener below), making
+ * that listener see a parentless node and wrongly close the whole popover.
+ */
+let renderedHighlightValueField: CategoricalHighlightField | null = null;
+let highlightValueButtons: ReadonlyMap<Substance, HTMLButtonElement> = new Map();
+
+const renderHighlightValues = (): void => {
+  const field = highlightState.field;
+  if (!isCategoricalHighlightField(field)) {
+    menuHighlightValuesEl.classList.add('hidden');
+    menuHighlightValuesEl.replaceChildren();
+    renderedHighlightValueField = null;
+    highlightValueButtons = new Map();
+    return;
+  }
+  menuHighlightValuesEl.classList.remove('hidden');
+  if (renderedHighlightValueField !== field) {
+    renderedHighlightValueField = field;
+    const buttons = new Map<Substance, HTMLButtonElement>();
+    for (const substance of selectableSubstancesFor(field, ALL_SUBSTANCES)) {
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'highlight-value-swatch';
+      swatch.style.backgroundColor = SUBSTANCE_COLORS[substance];
+      swatch.title = substance;
+      swatch.setAttribute('role', 'menuitemradio');
+      swatch.addEventListener('click', () => setCategoricalHighlight(field, substance));
+      buttons.set(substance, swatch);
+    }
+    highlightValueButtons = buttons;
+    menuHighlightValuesEl.replaceChildren(...buttons.values());
+  }
+  for (const [substance, swatch] of highlightValueButtons) {
+    swatch.setAttribute('aria-checked', String(highlightState.enabled && highlightState.selectedValue === substance));
+  }
+};
+
+const syncHighlightMenu = (): void => {
+  menuHighlightOffBtn.setAttribute('aria-checked', String(!highlightState.enabled));
+  for (const [field, row] of highlightFieldRows) {
+    row.setAttribute('aria-checked', String(highlightState.enabled && highlightState.field === field));
+  }
+  renderHighlightValues();
+};
+
+for (const field of HIGHLIGHT_FIELD_ORDER) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitemradio');
+  row.setAttribute('aria-checked', 'false');
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = HIGHLIGHT_FIELD_LABELS[field];
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    if (isCategoricalHighlightField(field)) {
+      // Only opens the value picker below; the condition itself isn't enabled until a value is chosen.
+      highlightState = { enabled: false, field };
+      syncHighlightMenu();
+    } else {
+      setContinuousHighlight(field);
+    }
+  });
+  highlightFieldRows.set(field, row);
+  menuHighlightFieldsEl.appendChild(row);
+}
+
+menuHighlightOffBtn.addEventListener('click', () => {
+  highlightState = { ...highlightState, enabled: false };
+  syncHighlightMenu();
+});
+
+syncHighlightMenu();
 
 /**
  * Live engine-settings panel (#31): one slider per `SETTING_CONTROL_SPECS` entry, grouped
@@ -1012,6 +1143,8 @@ interface InspectorRow {
   label: string;
   value: string;
   swatchColor?: string;
+  /** Set for trait rows that double as a highlight-condition shortcut (#78) — clicking the value applies it. */
+  onClick?: () => void;
 }
 
 function buildDl(rows: InspectorRow[]): HTMLDListElement {
@@ -1027,6 +1160,13 @@ function buildDl(rows: InspectorRow[]): HTMLDListElement {
       dd.appendChild(swatch);
     }
     dd.appendChild(document.createTextNode(row.value));
+    if (row.onClick) {
+      dd.classList.add('clickable');
+      dd.setAttribute('role', 'button');
+      dd.tabIndex = 0;
+      dd.title = 'Highlight matching cells';
+      dd.addEventListener('click', row.onClick);
+    }
     dl.appendChild(dt);
     dl.appendChild(dd);
   }
@@ -1249,19 +1389,27 @@ const renderInspector = (): void => {
     rows.push(
       { label: 'Kind', value: entity.kind },
       { label: 'Substance', value: substance, swatchColor: SUBSTANCE_COLORS[substance] },
-      { label: 'Size', value: Math.round(entity.size).toString() },
+      { label: 'Size', value: Math.round(entity.size).toString(), onClick: () => setContinuousHighlight('size') },
     );
     if (entity.kind === 'organic') {
       rows.push(
-        { label: 'Energy', value: Math.round(entity.energy).toString() },
-        { label: 'Age', value: entity.age.toString() },
+        { label: 'Energy', value: Math.round(entity.energy).toString(), onClick: () => setContinuousHighlight('energy') },
+        { label: 'Age', value: entity.age.toString(), onClick: () => setContinuousHighlight('age') },
         { label: 'Waste', value: Math.round(entity.accumulatedWaste).toString() },
-        { label: 'Body', value: entity.dna.body },
-        { label: 'Consume', value: entity.dna.consume },
-        { label: 'Produce', value: entity.dna.produce },
-        { label: 'Toxin', value: entity.dna.toxin },
-        { label: 'Instruction mutations', value: entity.dna.instructionMutations.toString() },
-        { label: 'Trait mutations', value: entity.dna.traitMutations.toString() },
+        { label: 'Body', value: entity.dna.body, onClick: () => setCategoricalHighlight('body', entity.dna.body) },
+        { label: 'Consume', value: entity.dna.consume, onClick: () => setCategoricalHighlight('consume', entity.dna.consume) },
+        { label: 'Produce', value: entity.dna.produce, onClick: () => setCategoricalHighlight('produce', entity.dna.produce) },
+        { label: 'Toxin', value: entity.dna.toxin, onClick: () => setCategoricalHighlight('toxin', entity.dna.toxin) },
+        {
+          label: 'Instruction mutations',
+          value: entity.dna.instructionMutations.toString(),
+          onClick: () => setContinuousHighlight('instructionMutations'),
+        },
+        {
+          label: 'Trait mutations',
+          value: entity.dna.traitMutations.toString(),
+          onClick: () => setContinuousHighlight('traitMutations'),
+        },
       );
     }
   }
@@ -1299,11 +1447,20 @@ const frame = (time: number): void => {
   if (latestSnapshot) {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
     lastTickCount = latestSnapshot.tickCount;
-    renderer.draw(latestSnapshot);
+    const mutations = computeMutationStats(latestSnapshot.entities);
+    const activeHighlight: ActiveHighlight | null = engineSettings
+      ? {
+          ...highlightState,
+          maxAge: engineSettings.maxAge,
+          maxSize: engineSettings.maxSize,
+          maxInstructionMutations: mutations.maxInstructionMutations,
+          maxTraitMutations: mutations.maxTraitMutations,
+        }
+      : null;
+    renderer.draw(latestSnapshot, activeHighlight);
     const averages = engineSettings
       ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
       : ZERO_AVERAGE_RATIOS;
-    const mutations = computeMutationStats(latestSnapshot.entities);
     statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, mutations, latestSnapshot.tickCount);
   }
   renderStats(counts);
