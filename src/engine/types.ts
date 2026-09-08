@@ -19,8 +19,12 @@ export interface DNA {
   produce: Substance;
   /** Which substance damages this organic. Never Sun. */
   toxin: Substance;
-  /** Whether this organic actively moves/hunts, or passively digests nearby matter. */
-  canMove: boolean;
+  /** This organic's finite-state behavior program; see InstructionMatrix below. */
+  behavior: InstructionMatrix;
+  /** Cumulative count of `behavior` mutations inherited across generations since the founding genome (0 for founding organics). */
+  instructionMutations: number;
+  /** Cumulative count of body/consume/produce/toxin mutations inherited across generations since the founding genome (0 for founding organics). */
+  traitMutations: number;
 }
 
 export interface Mineral {
@@ -43,9 +47,24 @@ export interface Organic {
   age: number;
   accumulatedWaste: number;
   dna: DNA;
+  /** Index into `dna.behavior`'s instruction ring this organic is currently in; advanced each tick by `decideAction`. */
+  currentState: number;
+  /** The action `decideAction` chose for this tick; null before the first tick evaluates it. */
+  chosenAction: Action | null;
 }
 
 export type Entity = Mineral | Organic;
+
+/**
+ * A lightweight view over grid dimensions and occupants, independent of any
+ * specific `Grid` implementation — e.g. a serialized snapshot posted from a
+ * simulation worker, where `entities` is a plain array rather than a method.
+ */
+export interface GridView {
+  width: number;
+  height: number;
+  entities: Entity[];
+}
 
 export function substanceOf(entity: Entity): Substance {
   return entity.kind === 'mineral' ? entity.substance : entity.dna.body;
@@ -53,4 +72,40 @@ export function substanceOf(entity: Entity): Substance {
 
 export function chebyshevDistance(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+export type MoveMode = 'TowardConsume' | 'AwayFromToxin' | 'TowardOpenSpace' | 'Random' | 'Hold';
+export type ProduceMode = 'Release' | 'Hold';
+export type SplitMode = 'Attempt';
+
+export type Action =
+  | { type: 'Move'; mode: MoveMode }
+  | { type: 'Produce'; mode: ProduceMode }
+  | { type: 'Split'; mode: SplitMode }
+  | { type: 'Rest' };
+
+export type Sensor = 'FoodDist' | 'ToxinDist' | 'EnergyRatio' | 'SizeRatio' | 'Age' | 'Crowding' | 'Random';
+
+export type Comparator = '<' | '>=';
+
+/** One state in an organic's instruction matrix: an action to take, and a test deciding the next state. */
+export interface Instruction {
+  action: Action;
+  sensor: Sensor;
+  comparator: Comparator;
+  threshold: number;
+  jumpOffset: number;
+}
+
+/** A fixed 25-entry (5x5) circular ring of states; index arithmetic wraps modulo this size. */
+export const INSTRUCTION_MATRIX_SIZE = 25;
+
+export type InstructionMatrix = readonly Instruction[];
+
+/**
+ * Wraps `index + offset` into `[0, INSTRUCTION_MATRIX_SIZE)`, matching the instruction
+ * matrix's circular-ring rule in both directions (positive or negative offset).
+ */
+export function wrapMatrixIndex(index: number, offset: number): number {
+  return ((index + offset) % INSTRUCTION_MATRIX_SIZE + INSTRUCTION_MATRIX_SIZE) % INSTRUCTION_MATRIX_SIZE;
 }

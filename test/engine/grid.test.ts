@@ -57,6 +57,41 @@ describe('Grid', () => {
     expect(grid.minerals()).toEqual([m]);
   });
 
+  it('clearing an entity removes it from organics()/minerals(), not just get()', () => {
+    const grid = new Grid(3, 3);
+    const o = organic({ x: 0, y: 0 });
+    const m = mineral({ x: 1, y: 1 }, 'Red', 50);
+    grid.set(0, 0, o);
+    grid.set(1, 1, m);
+    grid.clear(0, 0);
+    grid.clear(1, 1);
+    expect(grid.organics()).toEqual([]);
+    expect(grid.minerals()).toEqual([]);
+    expect(grid.entities()).toEqual([]);
+  });
+
+  it('set overwriting an occupied cell unregisters the previous occupant', () => {
+    const grid = new Grid(3, 3);
+    const first = organic({ x: 0, y: 0 });
+    const second = mineral({ x: 0, y: 0 }, 'Blue', 10);
+    grid.set(0, 0, first);
+    grid.set(0, 0, second);
+    expect(grid.organics()).toEqual([]);
+    expect(grid.minerals()).toEqual([second]);
+  });
+
+  it('organics()/minerals() iterate in registration (first-set) order, unaffected by moveEntity', () => {
+    const grid = new Grid(5, 5);
+    const first = organic({ x: 0, y: 0 });
+    const second = organic({ x: 1, y: 0 });
+    grid.set(0, 0, first);
+    grid.set(1, 0, second);
+    // Relocating `second` ahead of `first` on the grid shouldn't reorder organics(): it stays
+    // registered at its original (second) position rather than being re-added at the end.
+    grid.moveEntity(second, { x: 4, y: 4 });
+    expect(grid.organics()).toEqual([first, second]);
+  });
+
   it('positionsInRange excludes the center, clips to bounds, and sorts nearest-first', () => {
     const grid = new Grid(3, 3);
     const positions = grid.positionsInRange(0, 0, 1);

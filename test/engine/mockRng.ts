@@ -3,7 +3,7 @@ import { RNG } from '../../src/engine/rng';
 /**
  * A deterministic RNG for tests: `next()` replays a fixed queue of values
  * (looping if exhausted), and `int()` derives from `next()` the same way
- * DefaultRNG does, so test expectations can be computed by hand.
+ * SeededRNG does, so test expectations can be computed by hand.
  */
 export class MockRNG implements RNG {
   private index = 0;
