@@ -43,6 +43,15 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   - `dna.ts` — DNA generation and mutation.
   - `settings.ts` — all tunable simulation parameters (see table below),
     no hardcoded literals in the phase logic.
+  - `presets.ts` — named scenario presets (#32): each is a `Settings`
+    overrides bundle + an initial seeding recipe (population count, extra
+    scattered minerals, and a `genomeMode` — independently-random DNA per
+    organic, one shared DNA across the whole population, or independently-
+    random DNA with a fully randomized instruction matrix instead of the
+    tuned starter genome). `buildScenario()` builds a fresh `Simulation`
+    from a preset in one call, reusing `Simulation.spawnRandomOrganic`/
+    `spawnRandomMineral` (both drawing from the same `Simulation.rng`, kept
+    public for exactly this) rather than duplicating grid/RNG plumbing.
   - `phases.ts` — the eight tick phases, each independently exported and
     unit-testable in isolation.
   - `simulation.ts` — orchestrates the phases into one `tick()`, plus a
@@ -78,7 +87,27 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   quota; IndexedDB's is tied to available disk space instead); Export/
   Import round-trip it through a downloaded/picked JSON file for sharing a
   run with someone else — both paths go through the same worker
-  `exportState`/`importState` messages and `SimulationState` shape.
+  `exportState`/`importState` messages and `SimulationState` shape; and the
+  Controls menu's Scenario group (#32), built from `engine/presets.ts`'s
+  `SCENARIO_PRESETS` rather than hand-written per preset so the menu and the
+  engine's preset list can't drift apart — picking one posts an
+  `applyPreset` message that replaces the worker's running `Simulation`
+  wholesale, the same "act immediately, no confirmation" pattern as Load;
+  and a standalone footer gear button (#31, `G`) that opens a live-tuning
+  panel built from `ui/settingsControls.ts`'s `SETTING_CONTROL_SPECS` (one
+  slider per tunable `Settings` field, grouped, `width`/`height` excluded
+  since those require rebuilding the grid rather than swapping a value) —
+  each slider's `input` event posts an `updateSettings` message the worker
+  applies with `Object.assign` onto the live `Settings` object `Simulation`
+  already holds a reference to, so every phase function (which reads
+  settings fresh each tick) picks up the change on the very next tick with
+  no restart. A "Reset to defaults" button restores `defaultSettings()`.
+  The panel's sliders are kept in sync with the worker's actual values —
+  not just the user's last drag — via the same `'settings'` message
+  `importState`/`applyPreset` already used for the Averages tab's
+  `maxAge`/`maxSize` (now carrying the whole `Settings` object instead of
+  just those two fields), so switching a scenario preset or loading a save
+  updates the panel too instead of leaving it showing stale values.
 
 ## Domain model summary
 
@@ -90,6 +119,11 @@ See the JSDoc on each function in `src/engine/phases.ts` for the exact
 per-phase rules.
 
 ### Settings (`src/engine/settings.ts`)
+
+All fields below except `width`/`height` are live-tunable from the running
+page via the Controls menu's Settings panel (#31) — see `src/main.ts`'s
+architecture note above — rather than only being code-only constants
+requiring a rebuild.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -109,8 +143,10 @@ per-phase rules.
 | `productionRange` | 1 | radius for depositing waste as minerals |
 | `toxinRange` | 2 | radius within which toxin sources damage a cell |
 | `reproductionRange` | 1 | radius offspring can be placed at, relative to parent |
-| `mutationRate` | 0.01 | probability a single DNA trait mutates on reproduction |
+| `mutationRate` | 0.01 | probability a mutation happens at all on reproduction |
+| `behaviorMutationRatio` | 0.5 | given a mutation happens, probability it targets behavior rather than a point trait (see mutation model below) |
 | `returnHealthWhenReproductionFails` | 0.5 | fraction of spent energy refunded if reproduction can't place the offspring |
+| `wasteIntoxicationFactor` | 1 | multiplier on self-damage from waste an organic tried to Release but had no room to place (0 disables it) |
 
 All range checks use Chebyshev distance (`max(|dx|,|dy|)`) and are
 inclusive (a cell is "in range" when its distance is `<= range`).
@@ -135,6 +171,22 @@ inclusive (a cell is "in range" when its distance is `<= range`).
 - **Newborn organics** start at `energy == size` (full tank) — the spec
   doesn't say explicitly, but "DefaultSize... starting size" reads most
   naturally as a full starting reserve.
+- **Mutation is a two-step choice: category, then variable** (#31 explicitly
+  raised whether per-trait rates make more sense than one global rate).
+  `mutateDNA` (`engine/dna.ts`) first rolls `mutationRate` (does a mutation
+  happen at all this reproduction), then — only if it does — rolls
+  `behaviorMutationRatio` to decide the mutation's *category*: the
+  behavior/instruction matrix, or the 4 point traits (body/consume/produce/
+  toxin) as a group; only then is the specific variable within that
+  category picked uniformly at random (one point trait, or one instruction-
+  matrix state + mutation operator). This makes behavioral adaptation speed
+  independently tunable from point-trait mutation, without needing a
+  separate rate per individual point trait — which was considered and
+  dropped as a finer grain than #31 asked for, and a bigger change to the
+  DNA model itself. `behaviorMutationRatio` defaults to 0.5 — a mutation
+  is as likely to land on behavior as on the point traits as a whole
+  (originally 1-of-5-traits odds gave behavior only 20%) — and the
+  live-tuning panel is where this actually gets explored further.
 
 ### Instruction-matrix findings (#12)
 

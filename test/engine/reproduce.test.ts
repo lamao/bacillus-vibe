@@ -106,13 +106,36 @@ describe('reproduce (phase 3)', () => {
     const parent = organic({ x: 5, y: 5 }, { energy: 2000, size: 1000, dna: dna({ body: 'Blue' }), chosenAction: split });
     place(grid, parent);
     // spent=0.5->750; offset=0.5->(1,0); mutation roll 0 (< rate 1) -> mutate;
-    // trait pick 0 -> 'body'; substance pick 0.3 -> 'Green' (differs from parent's 'Blue')
-    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0, 0, 0.3]), idGen());
+    // category roll 0.5 (default behaviorMutationRatio=0.5, 0.5 < 0.5 is false -> point-trait branch);
+    // trait pick 0 -> 'body'; substance pick 0.3 -> 'Yellow' (floor(0.3*4)=1 into
+    // ['Green','Yellow','White','Red'], parent's own 'Blue' excluded from the pool)
+    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0, 0.5, 0, 0.3]), idGen());
 
     const offspring = grid.get(6, 5);
     expect(offspring?.kind).toBe('organic');
     if (offspring?.kind === 'organic') {
-      expect(offspring.dna.body).toBe('Green');
+      expect(offspring.dna.body).toBe('Yellow');
+      expect(offspring.dna.traitMutations).toBe(1);
+      expect(offspring.dna.instructionMutations).toBe(0);
+    }
+  });
+
+  it("copies the parent's mutation counters onto the offspring when the mutation roll fails", () => {
+    const settings = testSettings({ reproductionThreshold: 2000, defaultSize: 750, mutationRate: 0.01 });
+    const grid = emptyGrid(settings);
+    const parent = organic(
+      { x: 5, y: 5 },
+      { energy: 2000, size: 1000, dna: dna({ instructionMutations: 3, traitMutations: 7 }), chosenAction: split },
+    );
+    place(grid, parent);
+    // spent=0.5->750; offset=0.5->(1,0); mutation roll 0.9 >= rate 0.01 -> no mutation.
+    reproduce(grid, settings, new MockRNG([0.5, 0.5, 0.9]), idGen());
+
+    const offspring = grid.get(6, 5);
+    expect(offspring?.kind).toBe('organic');
+    if (offspring?.kind === 'organic') {
+      expect(offspring.dna.instructionMutations).toBe(3);
+      expect(offspring.dna.traitMutations).toBe(7);
     }
   });
 

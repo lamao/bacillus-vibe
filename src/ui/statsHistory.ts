@@ -1,5 +1,6 @@
 import { Substance } from '../engine/types';
 import { AverageRatios } from './averages';
+import { MutationStats } from './mutations';
 
 /** Births/deaths per second, wall-clock (see main.ts's sampleBirthsDeaths — a once-per-second diff of the engine's cumulative counters, not a per-tick count). */
 export interface BirthsDeathsRate {
@@ -20,6 +21,8 @@ export interface StatsSample {
   byToxin: ReadonlyMap<Substance, number>;
   averages: AverageRatios;
   birthsDeaths: BirthsDeathsRate;
+  /** Population-wide mutation load (#80), for the Mutations tab's chart. */
+  mutations: MutationStats;
 }
 
 /** Time windows offered by the stats drawer's "Last N ticks" chips. */

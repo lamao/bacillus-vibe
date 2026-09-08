@@ -1,5 +1,6 @@
 import {
   Action,
+  ALL_SUBSTANCES,
   Entity,
   INSTRUCTION_MATRIX_SIZE,
   MoveMode,
@@ -10,9 +11,23 @@ import {
   Substance,
   substanceOf,
 } from './engine/types';
+import { SCENARIO_PRESETS } from './engine/presets';
+import { Settings, TunableSettingKey } from './engine/settings';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
+import {
+  CategoricalHighlightField,
+  ContinuousHighlightField,
+  defaultHighlightState,
+  HIGHLIGHT_FIELD_LABELS,
+  HighlightField,
+  HighlightState,
+  isCategoricalHighlightField,
+  selectableSubstancesFor,
+} from './ui/highlight';
+import { computeMutationStats } from './ui/mutations';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
-import { Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { ActiveHighlight, Renderer, SUBSTANCE_COLORS } from './ui/renderer';
+import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
 import { StatsDrawer } from './ui/statsDrawer';
 import { computeStatCounts, StatCounts } from './ui/stats';
 import { computeTrend, Trend } from './ui/trend';
@@ -221,6 +236,16 @@ const ICON_DEFS_SVG = `
       <path d="M12 15 V4 M8 8 L12 4 L16 8" />
       <path d="M4.5 17 V18.5 A1 1 0 0 0 5.5 19.5 H18.5 A1 1 0 0 0 19.5 18.5 V17" />
     </symbol>
+    <symbol id="ic-flask" viewBox="0 0 24 24">
+      <path d="M9.5 3.5 H14.5 M10.2 3.5 V9.2 L4.9 18.4 A1.4 1.4 0 0 0 6.1 20.5 H17.9 A1.4 1.4 0 0 0 19.1 18.4 L13.8 9.2 V3.5" />
+      <path d="M7.7 15 H16.3" />
+    </symbol>
+    <symbol id="ic-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 4.5 V6.5 M12 17.5 V19.5 M4.5 12 H6.5 M17.5 12 H19.5 M6.5 6.5 L8 8 M16 16 L17.5 17.5 M17.5 6.5 L16 8 M8 16 L6.5 17.5"
+      />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -260,6 +285,7 @@ const pauseIconUse = document.querySelector<SVGUseElement>('#pause-icon-use');
 const ticBtn = document.querySelector<HTMLButtonElement>('#tic-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
+const settingsBtn = document.querySelector<HTMLButtonElement>('#settings-btn');
 const inspectorEl = document.querySelector<HTMLElement>('#inspector');
 const inspectorContentEl = document.querySelector<HTMLElement>('#inspector-content');
 const inspectorCloseBtn = document.querySelector<HTMLButtonElement>('#inspector-close');
@@ -278,6 +304,15 @@ const controlsMenuBtn = document.querySelector<HTMLButtonElement>('#controls-men
 const controlsMenuEl = document.querySelector<HTMLElement>('#controls-menu');
 const menuDrawerToggle = document.querySelector<HTMLButtonElement>('#menu-drawer-toggle');
 const menuLegendToggle = document.querySelector<HTMLButtonElement>('#menu-legend-toggle');
+const menuScenarioListEl = document.querySelector<HTMLElement>('#menu-scenario-list');
+const menuHighlightOffBtn = document.querySelector<HTMLButtonElement>('#menu-highlight-off');
+const menuHighlightFieldsEl = document.querySelector<HTMLElement>('#menu-highlight-fields');
+const menuHighlightValuesEl = document.querySelector<HTMLElement>('#menu-highlight-values');
+const settingsPanelEl = document.querySelector<HTMLElement>('#settings-panel');
+const settingsPanelBackdropEl = document.querySelector<HTMLElement>('#settings-panel-backdrop');
+const settingsPanelCloseBtn = document.querySelector<HTMLButtonElement>('#settings-panel-close');
+const settingsPanelContentEl = document.querySelector<HTMLElement>('#settings-panel-content');
+const settingsResetBtn = document.querySelector<HTMLButtonElement>('#settings-reset-btn');
 const menuSaveBtn = document.querySelector<HTMLButtonElement>('#menu-save-btn');
 const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
@@ -291,6 +326,7 @@ if (
   !ticBtn ||
   !addBtn ||
   !inspectBtn ||
+  !settingsBtn ||
   !inspectorEl ||
   !inspectorContentEl ||
   !inspectorCloseBtn ||
@@ -309,6 +345,15 @@ if (
   !controlsMenuEl ||
   !menuDrawerToggle ||
   !menuLegendToggle ||
+  !menuScenarioListEl ||
+  !menuHighlightOffBtn ||
+  !menuHighlightFieldsEl ||
+  !menuHighlightValuesEl ||
+  !settingsPanelEl ||
+  !settingsPanelBackdropEl ||
+  !settingsPanelCloseBtn ||
+  !settingsPanelContentEl ||
+  !settingsResetBtn ||
   !menuSaveBtn ||
   !menuLoadBtn ||
   !menuExportBtn ||
@@ -334,15 +379,20 @@ let latestSnapshot: SimulationSnapshot | null = null;
 let entityByPosition = new Map<string, Entity>();
 /** Id-keyed index of organics only (minerals have no stable id), so the inspector can keep following an organic as it moves. */
 let organicById = new Map<number, Organic>();
-/** Settings only changes wholesale on an import (#29), so this is refreshed from the worker's 'settings' message rather than resent with every snapshot. */
-let engineSettings: { maxAge: number; maxSize: number } | null = null;
+/**
+ * Refreshed from the worker's 'settings' message: on startup, after a wholesale
+ * replacement (import/scenario preset), and after a live edit via the settings panel
+ * below (#31) — rather than resent with every snapshot.
+ */
+let engineSettings: Settings | null = null;
 /** Which action a pending 'exportState' round-trip is for — the worker's reply is generic, so this remembers what to do once it arrives. */
 let pendingExport: 'save' | 'download' | null = null;
 
 worker.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerResponse;
   if (message.type === 'settings') {
-    engineSettings = { maxAge: message.maxAge, maxSize: message.maxSize };
+    engineSettings = message.settings;
+    syncSettingsPanel(message.settings);
     return;
   }
   if (message.type === 'exportedState') {
@@ -380,6 +430,8 @@ type InspectedTarget = { type: 'entity'; id: number } | { type: 'cell'; position
 let inspectedTarget: InspectedTarget | null = null;
 /** Instruction matrix state tapped for detail in the inspector; reset whenever a new cell is inspected. */
 let selectedStateIndex: number | null = null;
+/** Cell-highlight condition (#78) — purely transient UI state, never serialized; resets to off implicitly on page reload since nothing persists it. */
+let highlightState: HighlightState = defaultHighlightState();
 
 // A ResizeObserver (rather than only window 'resize'/'orientationchange') tracks
 // canvas-wrap's actual box, so the canvas stays correctly sized even when layout
@@ -445,6 +497,7 @@ const closeControlsMenu = (): void => {
 const syncControlsMenu = (): void => {
   menuDrawerToggle.setAttribute('aria-checked', String(statsDrawer.isExpanded()));
   menuLegendToggle.setAttribute('aria-checked', String(!iconLegendEl.classList.contains('hidden')));
+  syncHighlightMenu();
 };
 
 const openControlsMenu = (): void => {
@@ -524,24 +577,261 @@ const flashHint = (message: string): void => {
 };
 
 /**
+ * Scenario presets (#32): each row applies a named settings bundle + seeding recipe
+ * (`src/engine/presets.ts`), replacing the running simulation wholesale — same one-shot
+ * "act immediately, no confirmation" pattern as Save/Load below. Built from
+ * `SCENARIO_PRESETS` rather than hand-written per preset, so this list and the engine's
+ * stay in sync automatically.
+ */
+for (const preset of SCENARIO_PRESETS) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitem');
+  row.title = preset.description;
+  row.appendChild(buildIcon('ic-flask', 'btn-icon'));
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = preset.name;
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    postToWorker({ type: 'applyPreset', presetId: preset.id });
+    flashHint(`Scenario: ${preset.name}`);
+    closeControlsMenu();
+  });
+  menuScenarioListEl.appendChild(row);
+}
+
+/**
+ * Cell highlighting (#78): one active condition at a time, entered either via this
+ * "Highlight" menu group or by tapping a trait row in the inspector (see
+ * `setCategoricalHighlight`/`setContinuousHighlight`, wired into `renderInspector`
+ * below). Picking a categorical field alone doesn't enable highlighting yet — it just
+ * opens that field's value swatches — since a categorical condition needs both a field
+ * and a value to mean anything; picking a continuous field enables its heatmap
+ * immediately, since the whole grid renders on the gradient with no value to choose.
+ */
+const HIGHLIGHT_FIELD_ORDER: readonly HighlightField[] = [
+  'body',
+  'consume',
+  'produce',
+  'toxin',
+  'age',
+  'size',
+  'energy',
+  'instructionMutations',
+  'traitMutations',
+];
+const highlightFieldRows = new Map<HighlightField, HTMLButtonElement>();
+
+const setCategoricalHighlight = (field: CategoricalHighlightField, value: Substance): void => {
+  highlightState = { enabled: true, field, selectedValue: value };
+  syncHighlightMenu();
+};
+
+const setContinuousHighlight = (field: ContinuousHighlightField): void => {
+  highlightState = { enabled: true, field };
+  syncHighlightMenu();
+};
+
+/**
+ * Which field's swatches are currently built into `menuHighlightValuesEl`, so picking a
+ * value only updates `aria-checked` on the existing buttons rather than rebuilding them.
+ * Rebuilding on every pick would detach the just-clicked swatch mid-bubble (this handler
+ * runs before the document-level "click outside closes the menu" listener below), making
+ * that listener see a parentless node and wrongly close the whole popover.
+ */
+let renderedHighlightValueField: CategoricalHighlightField | null = null;
+let highlightValueButtons: ReadonlyMap<Substance, HTMLButtonElement> = new Map();
+
+const renderHighlightValues = (): void => {
+  const field = highlightState.field;
+  if (!isCategoricalHighlightField(field)) {
+    menuHighlightValuesEl.classList.add('hidden');
+    menuHighlightValuesEl.replaceChildren();
+    renderedHighlightValueField = null;
+    highlightValueButtons = new Map();
+    return;
+  }
+  menuHighlightValuesEl.classList.remove('hidden');
+  if (renderedHighlightValueField !== field) {
+    renderedHighlightValueField = field;
+    const buttons = new Map<Substance, HTMLButtonElement>();
+    for (const substance of selectableSubstancesFor(field, ALL_SUBSTANCES)) {
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'highlight-value-swatch';
+      swatch.style.backgroundColor = SUBSTANCE_COLORS[substance];
+      swatch.title = substance;
+      swatch.setAttribute('role', 'menuitemradio');
+      swatch.addEventListener('click', () => setCategoricalHighlight(field, substance));
+      buttons.set(substance, swatch);
+    }
+    highlightValueButtons = buttons;
+    menuHighlightValuesEl.replaceChildren(...buttons.values());
+  }
+  for (const [substance, swatch] of highlightValueButtons) {
+    swatch.setAttribute('aria-checked', String(highlightState.enabled && highlightState.selectedValue === substance));
+  }
+};
+
+const syncHighlightMenu = (): void => {
+  menuHighlightOffBtn.setAttribute('aria-checked', String(!highlightState.enabled));
+  for (const [field, row] of highlightFieldRows) {
+    row.setAttribute('aria-checked', String(highlightState.enabled && highlightState.field === field));
+  }
+  renderHighlightValues();
+};
+
+for (const field of HIGHLIGHT_FIELD_ORDER) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitemradio');
+  row.setAttribute('aria-checked', 'false');
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = HIGHLIGHT_FIELD_LABELS[field];
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    if (isCategoricalHighlightField(field)) {
+      // Only opens the value picker below; the condition itself isn't enabled until a value is chosen.
+      highlightState = { enabled: false, field };
+      syncHighlightMenu();
+    } else {
+      setContinuousHighlight(field);
+    }
+  });
+  highlightFieldRows.set(field, row);
+  menuHighlightFieldsEl.appendChild(row);
+}
+
+menuHighlightOffBtn.addEventListener('click', () => {
+  highlightState = { ...highlightState, enabled: false };
+  syncHighlightMenu();
+});
+
+syncHighlightMenu();
+
+/**
+ * Live engine-settings panel (#31): one slider per `SETTING_CONTROL_SPECS` entry, grouped
+ * into sections. Each slider posts an `updateSettings` message on 'input' (live, not just
+ * on release) so the effect on a running population is visible immediately — the primary
+ * motivation being `mutationRate`, to feel out how much DNA mutation drives adaptation.
+ * Built once at startup (the spec list is static); values are kept in sync with the
+ * worker's own settings via `syncSettingsPanel`, called from every 'settings' message,
+ * so a scenario preset or save/load import that changes settings updates the sliders too.
+ */
+const settingsSliderInputs = new Map<TunableSettingKey, HTMLInputElement>();
+const settingsValueEls = new Map<TunableSettingKey, HTMLElement>();
+const settingsSpecByKey = new Map(SETTING_CONTROL_GROUPS.flatMap((group) => specsInGroup(group)).map((spec) => [spec.key, spec]));
+
+function buildSettingsPanelContent(): HTMLElement {
+  const root = document.createElement('div');
+  root.className = 'settings-groups';
+
+  for (const group of SETTING_CONTROL_GROUPS) {
+    const specs = specsInGroup(group);
+    if (specs.length === 0) continue;
+
+    const groupEl = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'settings-group-title';
+    title.textContent = group;
+    groupEl.appendChild(title);
+
+    for (const spec of specs) {
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+
+      const head = document.createElement('div');
+      head.className = 'settings-row-head';
+      const label = document.createElement('label');
+      label.textContent = spec.label;
+      label.htmlFor = `setting-${spec.key}`;
+      const valueEl = document.createElement('span');
+      valueEl.className = 'settings-row-value';
+      head.append(label, valueEl);
+      row.appendChild(head);
+
+      const desc = document.createElement('p');
+      desc.className = 'settings-row-desc';
+      desc.textContent = spec.description;
+      row.appendChild(desc);
+
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.id = `setting-${spec.key}`;
+      input.min = String(spec.min);
+      input.max = String(spec.max);
+      input.step = String(spec.step);
+      input.addEventListener('input', () => {
+        const value = Number(input.value);
+        valueEl.textContent = spec.format(value);
+        postToWorker({ type: 'updateSettings', settings: { [spec.key]: value } });
+      });
+      row.appendChild(input);
+
+      settingsSliderInputs.set(spec.key, input);
+      settingsValueEls.set(spec.key, valueEl);
+      groupEl.appendChild(row);
+    }
+    root.appendChild(groupEl);
+  }
+
+  return root;
+}
+
+settingsPanelContentEl.replaceChildren(buildSettingsPanelContent());
+
+/** Reflects `settings` (the worker's current values) onto every slider/label, without touching focus or triggering another 'input' event. */
+function syncSettingsPanel(settings: Settings): void {
+  for (const [key, input] of settingsSliderInputs) {
+    const value = settings[key];
+    input.value = String(value);
+    settingsValueEls.get(key)!.textContent = settingsSpecByKey.get(key)!.format(value);
+  }
+}
+
+const closeSettingsPanel = (): void => {
+  settingsPanelEl.classList.add('hidden');
+  settingsBtn.setAttribute('aria-pressed', 'false');
+};
+
+const openSettingsPanel = (): void => {
+  settingsPanelEl.classList.remove('hidden');
+  settingsBtn.setAttribute('aria-pressed', 'true');
+};
+
+const toggleSettingsPanel = (): void => {
+  if (settingsPanelEl.classList.contains('hidden')) openSettingsPanel();
+  else closeSettingsPanel();
+};
+
+settingsBtn.addEventListener('click', toggleSettingsPanel);
+settingsPanelCloseBtn.addEventListener('click', closeSettingsPanel);
+settingsPanelBackdropEl.addEventListener('click', closeSettingsPanel);
+
+settingsResetBtn.addEventListener('click', () => {
+  const defaults = defaultTunableSettings();
+  postToWorker({ type: 'updateSettings', settings: defaults });
+  flashHint('Settings reset to defaults');
+});
+
+/**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
  * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
- * for sharing with someone else. All four close the popover, matching a one-shot menu action
- * rather than a toggle.
+ * for sharing with someone else. Save/Load are also reachable via the Shift+S/L hotkeys
+ * below, sharing these same functions. All four close the popover, matching a one-shot
+ * menu action rather than a toggle.
  */
-menuSaveBtn.addEventListener('click', () => {
+const doSave = (): void => {
   pendingExport = 'save';
   postToWorker({ type: 'exportState' });
   closeControlsMenu();
-});
+};
 
-menuExportBtn.addEventListener('click', () => {
-  pendingExport = 'download';
-  postToWorker({ type: 'exportState' });
-  closeControlsMenu();
-});
-
-menuLoadBtn.addEventListener('click', () => {
+const doLoad = (): void => {
   closeControlsMenu();
   loadQuickResume().then((state) => {
     if (!state) {
@@ -551,7 +841,17 @@ menuLoadBtn.addEventListener('click', () => {
     postToWorker({ type: 'importState', state });
     flashHint('Loaded');
   });
+};
+
+menuSaveBtn.addEventListener('click', doSave);
+
+menuExportBtn.addEventListener('click', () => {
+  pendingExport = 'download';
+  postToWorker({ type: 'exportState' });
+  closeControlsMenu();
 });
+
+menuLoadBtn.addEventListener('click', doLoad);
 
 menuImportBtn.addEventListener('click', () => {
   importFileInput.click();
@@ -613,15 +913,46 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
   }
 });
 
+/** True while a shortcut-suppressing OS/browser modifier is held (so e.g. Cmd+A keeps working). */
+const hasBrowserModifier = (event: KeyboardEvent): boolean => event.ctrlKey || event.metaKey || event.altKey;
+
+/** Shift+S saves; plain S steps once (while paused) — both share the Controls menu's own doSave/stepOnce. */
+const handleKeyS = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doSave();
+  else stepOnce();
+};
+
+/** Only Shift+L loads — plain L isn't otherwise bound, so it's left alone rather than treated as a shortcut. */
+const handleKeyL = (event: KeyboardEvent): void => {
+  if (event.shiftKey) doLoad();
+};
+
+const paginateStatsIfExpanded = (direction: number): void => {
+  if (statsDrawer.isExpanded()) statsDrawer.paginate(direction);
+};
+
+/** Esc closes whichever overlay is topmost: menu/modals first, then (since exiting inspect mode already hides the inspector panel) inspect mode itself. */
+const closeTopmostOverlay = (): void => {
+  if (!controlsMenuEl.classList.contains('hidden')) {
+    closeControlsMenu();
+  } else if (!settingsPanelEl.classList.contains('hidden')) {
+    closeSettingsPanel();
+  } else if (!iconLegendEl.classList.contains('hidden')) {
+    closeLegend();
+  } else if (inspectMode) {
+    exitInspectMode();
+  }
+};
+
 /**
- * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a modifier
- * key is held (so browser/OS shortcuts like Cmd+A keep working) or while focus is on a
- * form control (there's currently only the speed slider, but this guards against future
- * text inputs too). Esc closes whichever overlay is topmost: the legend modal first, then
- * (since exiting inspect mode already hides the inspector panel) inspect mode itself.
+ * Global keyboard shortcuts for the footer/panel buttons above. Ignored while a browser
+ * modifier is held or while focus is on a form control (there's currently only the speed
+ * slider, but this guards against future text inputs too). Shift is not filtered out, since
+ * it's used for Save/Load's Shift+S/Shift+L (kept consistent with each other, and
+ * distinguishing Shift+S from plain S's Step).
  */
 window.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (hasBrowserModifier(event)) return;
   const target = event.target;
   if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
@@ -636,7 +967,11 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'KeyS':
       event.preventDefault();
-      stepOnce();
+      handleKeyS(event);
+      break;
+    case 'KeyL':
+      if (event.shiftKey) event.preventDefault();
+      handleKeyL(event);
       break;
     case 'KeyA':
       event.preventDefault();
@@ -645,6 +980,10 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     case 'KeyI':
       event.preventDefault();
       toggleInspectMode();
+      break;
+    case 'KeyG':
+      event.preventDefault();
+      toggleSettingsPanel();
       break;
     case 'Equal':
       event.preventDefault();
@@ -666,21 +1005,15 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       break;
     case 'BracketLeft':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(-1);
+      paginateStatsIfExpanded(-1);
       break;
     case 'BracketRight':
       event.preventDefault();
-      if (statsDrawer.isExpanded()) statsDrawer.paginate(1);
+      paginateStatsIfExpanded(1);
       break;
     case 'Escape':
       event.preventDefault();
-      if (!controlsMenuEl.classList.contains('hidden')) {
-        closeControlsMenu();
-      } else if (!iconLegendEl.classList.contains('hidden')) {
-        closeLegend();
-      } else if (inspectMode) {
-        exitInspectMode();
-      }
+      closeTopmostOverlay();
       break;
   }
 });
@@ -810,6 +1143,8 @@ interface InspectorRow {
   label: string;
   value: string;
   swatchColor?: string;
+  /** Set for trait rows that double as a highlight-condition shortcut (#78) — clicking the value applies it. */
+  onClick?: () => void;
 }
 
 function buildDl(rows: InspectorRow[]): HTMLDListElement {
@@ -825,6 +1160,13 @@ function buildDl(rows: InspectorRow[]): HTMLDListElement {
       dd.appendChild(swatch);
     }
     dd.appendChild(document.createTextNode(row.value));
+    if (row.onClick) {
+      dd.classList.add('clickable');
+      dd.setAttribute('role', 'button');
+      dd.tabIndex = 0;
+      dd.title = 'Highlight matching cells';
+      dd.addEventListener('click', row.onClick);
+    }
     dl.appendChild(dt);
     dl.appendChild(dd);
   }
@@ -1047,17 +1389,27 @@ const renderInspector = (): void => {
     rows.push(
       { label: 'Kind', value: entity.kind },
       { label: 'Substance', value: substance, swatchColor: SUBSTANCE_COLORS[substance] },
-      { label: 'Size', value: Math.round(entity.size).toString() },
+      { label: 'Size', value: Math.round(entity.size).toString(), onClick: () => setContinuousHighlight('size') },
     );
     if (entity.kind === 'organic') {
       rows.push(
-        { label: 'Energy', value: Math.round(entity.energy).toString() },
-        { label: 'Age', value: entity.age.toString() },
+        { label: 'Energy', value: Math.round(entity.energy).toString(), onClick: () => setContinuousHighlight('energy') },
+        { label: 'Age', value: entity.age.toString(), onClick: () => setContinuousHighlight('age') },
         { label: 'Waste', value: Math.round(entity.accumulatedWaste).toString() },
-        { label: 'Body', value: entity.dna.body },
-        { label: 'Consume', value: entity.dna.consume },
-        { label: 'Produce', value: entity.dna.produce },
-        { label: 'Toxin', value: entity.dna.toxin },
+        { label: 'Body', value: entity.dna.body, onClick: () => setCategoricalHighlight('body', entity.dna.body) },
+        { label: 'Consume', value: entity.dna.consume, onClick: () => setCategoricalHighlight('consume', entity.dna.consume) },
+        { label: 'Produce', value: entity.dna.produce, onClick: () => setCategoricalHighlight('produce', entity.dna.produce) },
+        { label: 'Toxin', value: entity.dna.toxin, onClick: () => setCategoricalHighlight('toxin', entity.dna.toxin) },
+        {
+          label: 'Instruction mutations',
+          value: entity.dna.instructionMutations.toString(),
+          onClick: () => setContinuousHighlight('instructionMutations'),
+        },
+        {
+          label: 'Trait mutations',
+          value: entity.dna.traitMutations.toString(),
+          onClick: () => setContinuousHighlight('traitMutations'),
+        },
       );
     }
   }
@@ -1095,11 +1447,21 @@ const frame = (time: number): void => {
   if (latestSnapshot) {
     tps = tpsMeter.sample(time, latestSnapshot.tickCount - lastTickCount);
     lastTickCount = latestSnapshot.tickCount;
-    renderer.draw(latestSnapshot);
+    const mutations = computeMutationStats(latestSnapshot.entities);
+    const activeHighlight: ActiveHighlight | null = engineSettings
+      ? {
+          ...highlightState,
+          maxAge: engineSettings.maxAge,
+          maxSize: engineSettings.maxSize,
+          maxInstructionMutations: mutations.maxInstructionMutations,
+          maxTraitMutations: mutations.maxTraitMutations,
+        }
+      : null;
+    renderer.draw(latestSnapshot, activeHighlight);
     const averages = engineSettings
       ? computeAverageRatios(latestSnapshot.entities, engineSettings.maxAge, engineSettings.maxSize)
       : ZERO_AVERAGE_RATIOS;
-    statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, latestSnapshot.tickCount);
+    statsDrawer.update(counts, averages, { births: birthsPerSec, deaths: deathsPerSec }, mutations, latestSnapshot.tickCount);
   }
   renderStats(counts);
   perfEl.textContent = formatPerf();

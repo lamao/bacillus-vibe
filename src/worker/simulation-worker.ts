@@ -1,3 +1,4 @@
+import { SCENARIO_PRESETS, buildScenario } from '../engine/presets';
 import { SeededRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
 import { Simulation } from '../engine/simulation';
@@ -88,6 +89,24 @@ self.onmessage = (event: MessageEvent) => {
       postSettings();
       postSnapshot();
       break;
+    case 'applyPreset': {
+      const preset = SCENARIO_PRESETS.find((p) => p.id === message.presetId);
+      if (!preset) break;
+      simulation = buildScenario(preset);
+      settings = simulation.settings;
+      // Same reasoning as 'importState': the old backlog belonged to the replaced simulation.
+      tickAccumulator = 0;
+      postSettings();
+      postSnapshot();
+      break;
+    }
+    case 'updateSettings':
+      // Mutates the object `simulation.settings` already holds a reference to, rather than
+      // replacing it — every phase function reads settings fresh each tick, so this takes
+      // effect on the very next tick with no simulation restart.
+      Object.assign(settings, message.settings);
+      postSettings();
+      break;
   }
 };
 
@@ -137,13 +156,9 @@ function loop(): void {
   postSnapshotIfDue();
 }
 
-/**
- * Posts the two Settings fields the Averages tab needs (see WorkerSettings' doc). Settings
- * only ever changes wholesale on 'importState', not incrementally, so this is called once
- * up front and again after each import rather than repeated on every snapshot.
- */
+/** Posts the current Settings (see WorkerSettings' doc) — on startup, after a wholesale replacement, and after a live edit. */
 function postSettings(): void {
-  const settingsMessage: WorkerSettings = { type: 'settings', maxAge: settings.maxAge, maxSize: settings.maxSize };
+  const settingsMessage: WorkerSettings = { type: 'settings', settings };
   self.postMessage(settingsMessage);
 }
 
