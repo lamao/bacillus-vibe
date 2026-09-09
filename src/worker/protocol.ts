@@ -1,3 +1,4 @@
+import { Replay } from '../engine/replay';
 import { SimulationState } from '../engine/simulation';
 import { Settings, TunableSettings } from '../engine/settings';
 import { GridView, Position } from '../engine/types';
@@ -28,7 +29,10 @@ export type WorkerRequest =
   | { type: 'exportState' }
   | { type: 'importState'; state: SimulationState }
   | { type: 'applyPreset'; presetId: string }
-  | { type: 'updateSettings'; settings: Partial<TunableSettings> };
+  | { type: 'updateSettings'; settings: Partial<TunableSettings> }
+  | { type: 'startRecording' }
+  | { type: 'stopRecording' }
+  | { type: 'importReplay'; replay: Replay };
 
 /**
  * A snapshot of the simulation's grid, posted from the worker once per
@@ -61,4 +65,32 @@ export interface ExportedState {
   state: SimulationState;
 }
 
-export type WorkerResponse = SimulationSnapshot | WorkerSettings | ExportedState;
+/**
+ * Posted after `startRecording`/`stopRecording` and after every interaction recorded in
+ * between, so the UI can show a live "Recording... N events" indicator (#33).
+ */
+export interface RecordingStatus {
+  type: 'recordingStatus';
+  recording: boolean;
+  recordedCount: number;
+}
+
+/** Reply to `stopRecording`, carrying the finished replay (#33) plus the tick it ends at, for naming the downloaded file. */
+export interface RecordedReplayMessage {
+  type: 'recordedReplay';
+  replay: Replay;
+  endTick: number;
+}
+
+/** Posted once when a loaded replay's inputs have all been applied and the simulation has caught up to them. */
+export interface ReplayFinished {
+  type: 'replayFinished';
+}
+
+export type WorkerResponse =
+  | SimulationSnapshot
+  | WorkerSettings
+  | ExportedState
+  | RecordingStatus
+  | RecordedReplayMessage
+  | ReplayFinished;

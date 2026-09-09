@@ -60,6 +60,20 @@ npm run coverage   # vitest run --coverage (lcov + text report)
     the whole thing — settings, RNG state, counters, and every entity — as
     plain JSON (`SimulationState`), for save/load; requires a `SeededRNG`,
     since that's the only `RNG` whose state can be read back.
+  - `replay.ts` — replay/export of a run (#33), built on top of #29's
+    `SimulationState` and the engine's determinism rather than per-tick
+    grid snapshots: a `Replay` is `{ initialState, inputs }`, where
+    `inputs` is a `RecordedInput[]` — every add-creature click and
+    settings change that happened after `initialState` was captured, each
+    tagged with the tick already completed when it was applied. Replaying
+    means rebuilding a `Simulation` from `initialState` and stepping it
+    forward, calling `applyRecordedInput` the instant `tickCount` reaches
+    an input's tick — byte-for-byte identical to the original run, since
+    every random draw an interaction itself makes (e.g.
+    `spawnRandomOrganic`'s position/DNA) comes from the same
+    `Simulation.rng` stream, consumed in the same order it was live. Far
+    smaller than storing the grid every tick, at the cost of needing to
+    re-simulate to seek anywhere in the replay.
 - **`src/ui/`** — Canvas2D renderer (`renderer.ts`) that reads a `GridView`
   (`src/engine/types.ts` — just `width`/`height`/`entities`, decoupled from
   the `Grid` class) and draws it; organics render brighter with a white
@@ -73,6 +87,20 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   `protocol.ts` for the message shapes. `importState` replaces the worker's
   `Simulation` wholesale (settings included, since a loaded save may have
   different grid dimensions), rather than mutating it in place.
+  `startRecording`/`stopRecording` (#33) bracket a recording: the former
+  snapshots the running `Simulation` as the replay's `initialState`; every
+  `spawnRandomOrganic`/`spawnOrganicAt`/`updateSettings` message received in
+  between is appended to an `inputs` log (tagged with the tick already
+  completed) before it's applied, same effect as live; the latter packages
+  both into a `Replay` and posts it back for the main thread to download.
+  `importReplay` loads one back in: it rebuilds the `Simulation` from
+  `initialState` and queues `inputs` sorted by tick, then the normal tick
+  loop (`loop()`/`stepOnce`) calls `applyDueReplayInputs()` after every
+  `step()` to apply whatever's now due — reusing the existing pause/speed/
+  step controls as the replay's playback controls, rather than a separate
+  fast-forward path. A wholesale replacement (`importState`/`applyPreset`)
+  cancels any in-progress recording, since its `initialState` would no
+  longer describe the running simulation.
 - **`src/main.ts`** — wires the renderer to a `requestAnimationFrame` loop
   that draws whatever snapshot the worker last posted (decoupled from the
   worker's own tick rate, which a speed slider controls via a
@@ -108,6 +136,35 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   `maxAge`/`maxSize` (now carrying the whole `Settings` object instead of
   just those two fields), so switching a scenario preset or loading a save
   updates the panel too instead of leaving it showing stale values.
+  The Controls menu's Replay group (#33, `src/ui/replay.ts`) is a single
+  "Start recording"/"Stop recording (N)" toggle (also bound to `R`) that
+  posts `startRecording`/`stopRecording` — the worker's `recordedReplay`
+  reply triggers a browser download the same way Export does for a save
+  file — plus an "Import replay" file picker that posts `importReplay` to
+  load one back in and start it playing at the current speed/pause state.
+
+## Replay files (#33)
+
+A replay (`petri-replay-tick<N>.json`) is not a recording of the grid —
+it's the seed/settings/initial grid (#29's `SimulationState`) plus a log of
+every add-creature click and settings change made afterward, each tagged
+with the tick it happened at. Loading one re-runs the simulation from that
+seed and re-applies the same interactions at the same ticks, reproducing
+the original run byte-for-byte (`test/engine/replay.test.ts`) — this only
+works because the engine is fully deterministic given a seed
+(`test/engine/determinism.test.ts`): every random draw, including the ones
+an interaction itself makes (e.g. `spawnRandomOrganic`'s position and DNA),
+comes from the same RNG stream in the same order every time. This is far
+cheaper than storing the full grid every tick, at the cost of only being
+able to "seek" by re-simulating forward from the start — there's no way to
+jump straight to tick 10,000 without stepping through every tick before it.
+
+Currently the only recordable interactions are add-creature clicks and live
+settings-panel edits — the two that already exist and affect a run's
+trajectory. `RecordedInput` (`src/engine/replay.ts`) is a closed union,
+so a future interaction that should also be replayable (e.g. a "god mode"
+edit, if one is ever added) is a matter of adding a variant there and to
+the worker's recording/replay switch, not a redesign of the format.
 
 ## Domain model summary
 
