@@ -181,7 +181,17 @@ self.onmessage = (event: MessageEvent) => {
       break;
     case 'startRecording':
       recording = true;
-      recordingInitialState = simulation.toState();
+      // toState() returns live references — `settings` is the very object `updateSettings`
+      // mutates in place, and each entity in `entities` is the same object phases.ts keeps
+      // mutating tick after tick (only `tickCount`/`rngState`/the counters are plain numbers,
+      // copied by value). `exportState` gets away with this because it hands the result
+      // straight to `postMessage`, whose structured-clone algorithm snapshots it in the same
+      // synchronous turn; here `recordingInitialState` instead sits in a variable for the
+      // whole recording session, so without an explicit deep clone it would keep drifting
+      // forward and, by `stopRecording`, describe the simulation as it looked at *stop* time
+      // while still claiming the tick/RNG state from *start* time — an internally
+      // inconsistent replay that looks like it "plays randomly" once reloaded.
+      recordingInitialState = structuredClone(simulation.toState());
       recordedInputs = [];
       postRecordingStatus();
       break;
