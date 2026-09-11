@@ -168,6 +168,26 @@
           </div>
           <hr class="controls-menu-divider" />
           <div class="controls-menu-group">
+            <div class="controls-menu-group-title"><span class="dot" style="background: #f97316"></span>Replay</div>
+            <button
+              type="button"
+              class="controls-menu-row"
+              id="menu-record-btn"
+              role="menuitemcheckbox"
+              aria-checked="false"
+              title="Record interactions and export a shareable replay (R)"
+            >
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-record"></use></svg>
+              <span class="label" id="menu-record-label">Start recording</span>
+              <kbd>R</kbd>
+            </button>
+            <button type="button" class="controls-menu-row" id="menu-import-replay-btn" role="menuitem" title="Load a replay file from disk">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-upload"></use></svg>
+              <span class="label">Import replay</span>
+            </button>
+          </div>
+          <hr class="controls-menu-divider" />
+          <div class="controls-menu-group">
             <div class="controls-menu-group-title"><span class="dot" style="background: #a855f7"></span>Help</div>
             <div class="shortcut-table">
               <kbd>Space</kbd><span>Pause / resume</span>
@@ -179,6 +199,7 @@
               <kbd>[&nbsp;&nbsp;]</kbd><span>Paginate stats pages</span>
               <kbd>Shift+S</kbd><span>Save</span>
               <kbd>Shift+L</kbd><span>Load</span>
+              <kbd>R</kbd><span>Start / stop recording a replay</span>
               <kbd>Esc</kbd><span>Close topmost overlay</span>
             </div>
           </div>
@@ -186,6 +207,7 @@
       </footer>
     </div>
     <input type="file" id="import-file-input" class="hidden" accept="application/json" aria-hidden="true" />
+    <input type="file" id="import-replay-input" class="hidden" accept="application/json" aria-hidden="true" />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

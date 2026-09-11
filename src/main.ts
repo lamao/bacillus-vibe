@@ -26,6 +26,7 @@ import {
 } from './ui/highlight';
 import { computeMutationStats } from './ui/mutations';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
+import { downloadReplay, parseReplay } from './ui/replay';
 import { ActiveHighlight, Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
 import { StatsDrawer } from './ui/statsDrawer';
@@ -246,6 +247,10 @@ const ICON_DEFS_SVG = `
         d="M12 4.5 V6.5 M12 17.5 V19.5 M4.5 12 H6.5 M17.5 12 H19.5 M6.5 6.5 L8 8 M16 16 L17.5 17.5 M17.5 6.5 L16 8 M8 16 L6.5 17.5"
       />
     </symbol>
+    <symbol id="ic-record" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="7.5" />
+      <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -318,6 +323,10 @@ const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
 const menuImportBtn = document.querySelector<HTMLButtonElement>('#menu-import-btn');
 const importFileInput = document.querySelector<HTMLInputElement>('#import-file-input');
+const menuRecordBtn = document.querySelector<HTMLButtonElement>('#menu-record-btn');
+const menuRecordLabel = document.querySelector<HTMLElement>('#menu-record-label');
+const menuImportReplayBtn = document.querySelector<HTMLButtonElement>('#menu-import-replay-btn');
+const importReplayInput = document.querySelector<HTMLInputElement>('#import-replay-input');
 
 if (
   !canvas ||
@@ -358,7 +367,11 @@ if (
   !menuLoadBtn ||
   !menuExportBtn ||
   !menuImportBtn ||
-  !importFileInput
+  !importFileInput ||
+  !menuRecordBtn ||
+  !menuRecordLabel ||
+  !menuImportReplayBtn ||
+  !importReplayInput
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
@@ -406,6 +419,19 @@ worker.onmessage = (event: MessageEvent) => {
       downloadSnapshot(message.state);
       flashHint('Exported');
     }
+    return;
+  }
+  if (message.type === 'recordingStatus') {
+    syncRecordButton(message.recording, message.recordedCount);
+    return;
+  }
+  if (message.type === 'recordedReplay') {
+    downloadReplay(message.replay, message.endTick);
+    flashHint('Replay exported');
+    return;
+  }
+  if (message.type === 'replayFinished') {
+    flashHint('Replay finished');
     return;
   }
   latestSnapshot = message;
@@ -876,6 +902,57 @@ importFileInput.addEventListener('change', () => {
     })
     .catch(() => flashHint('Could not read file'));
 });
+
+/**
+ * Record/replay (#33): "Start recording" begins logging every add-creature click and
+ * settings change on top of the current simulation state; clicking again stops the
+ * recording and downloads it as a shareable replay file (the worker's `recordedReplay`
+ * reply above triggers the actual download). `syncRecordButton` reflects the worker's own
+ * `recording`/`recordedCount` — the source of truth — onto the menu row, mirroring how the
+ * settings panel is kept in sync from the worker's 'settings' message.
+ */
+let isRecording = false;
+
+const syncRecordButton = (recording: boolean, recordedCount: number): void => {
+  isRecording = recording;
+  menuRecordBtn.setAttribute('aria-checked', String(recording));
+  menuRecordLabel.textContent = recording ? `Stop recording (${recordedCount})` : 'Start recording';
+};
+
+const toggleRecording = (): void => {
+  postToWorker({ type: isRecording ? 'stopRecording' : 'startRecording' });
+  if (!isRecording) flashHint('Recording started');
+};
+
+menuRecordBtn.addEventListener('click', () => {
+  toggleRecording();
+  closeControlsMenu();
+});
+
+menuImportReplayBtn.addEventListener('click', () => {
+  importReplayInput.click();
+  closeControlsMenu();
+});
+
+importReplayInput.addEventListener('change', () => {
+  const file = importReplayInput.files?.[0] ?? null;
+  // Cleared so picking the same file again still fires 'change'.
+  importReplayInput.value = '';
+  if (!file) return;
+  file
+    .text()
+    .then((text) => {
+      const replay = parseReplay(text);
+      if (!replay) {
+        flashHint('Invalid replay file');
+        return;
+      }
+      postToWorker({ type: 'importReplay', replay });
+      flashHint('Replay loaded');
+    })
+    .catch(() => flashHint('Could not read file'));
+});
+
 inspectBtn.addEventListener('click', toggleInspectMode);
 
 inspectorCloseBtn.addEventListener('click', exitInspectMode);
@@ -997,6 +1074,10 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       event.preventDefault();
       toggleLegend();
       syncControlsMenu();
+      break;
+    case 'KeyR':
+      event.preventDefault();
+      toggleRecording();
       break;
     case 'KeyD':
       event.preventDefault();

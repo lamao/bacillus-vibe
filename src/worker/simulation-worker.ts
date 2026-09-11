@@ -1,8 +1,18 @@
 import { SCENARIO_PRESETS, buildScenario } from '../engine/presets';
+import { applyRecordedInput, RecordedInput, Replay, REPLAY_VERSION } from '../engine/replay';
 import { SeededRNG } from '../engine/rng';
 import { defaultSettings } from '../engine/settings';
-import { Simulation } from '../engine/simulation';
-import { WORKER_LOOP_FPS, WorkerRequest, ExportedState, SimulationSnapshot, WorkerSettings } from './protocol';
+import { Simulation, SimulationState } from '../engine/simulation';
+import {
+  WORKER_LOOP_FPS,
+  WorkerRequest,
+  ExportedState,
+  RecordedReplayMessage,
+  RecordingStatus,
+  ReplayFinished,
+  SimulationSnapshot,
+  WorkerSettings,
+} from './protocol';
 
 const INITIAL_POPULATION = 150;
 
@@ -54,6 +64,56 @@ let tickAccumulator = 0;
 let lastLoopTime: number | null = null;
 let lastPostTime: number | null = null;
 
+// Replay recording (#33): while `recording` is true, every spawnRandomOrganic/
+// spawnOrganicAt/updateSettings message is appended to `recordedInputs` (tagged with the
+// tick already completed at that point) on top of `recordingInitialState`, the snapshot
+// taken the moment recording started. `stopRecording` packages the two into a `Replay`.
+let recording = false;
+let recordingInitialState: SimulationState | null = null;
+let recordedInputs: RecordedInput[] = [];
+
+// Replay playback: a loaded replay's inputs, sorted ascending by tick and consumed from
+// the front as the simulation's tickCount catches up to each one — reusing the normal
+// tick loop (and its pause/speed/step controls) rather than a separate fast-forward path.
+let replayQueue: RecordedInput[] = [];
+let replayActive = false;
+
+function recordInput(input: RecordedInput): void {
+  if (!recording) return;
+  recordedInputs.push(input);
+  postRecordingStatus();
+}
+
+/** Ends any in-progress recording without exporting it — used when the base simulation is replaced wholesale (import/preset), which invalidates the recording's initial state. */
+function cancelRecording(): void {
+  if (!recording) return;
+  recording = false;
+  recordingInitialState = null;
+  recordedInputs = [];
+  postRecordingStatus();
+}
+
+function postRecordingStatus(): void {
+  const status: RecordingStatus = { type: 'recordingStatus', recording, recordedCount: recordedInputs.length };
+  self.postMessage(status);
+}
+
+/** Applies every replay input due at the simulation's current tick, in order; posts settings if any changed the live tuning panel needs to reflect. */
+function applyDueReplayInputs(): void {
+  let settingsChanged = false;
+  while (replayQueue.length > 0 && replayQueue[0].tick === simulation.tickCount) {
+    const input = replayQueue.shift()!;
+    applyRecordedInput(simulation, input);
+    if (input.type === 'updateSettings') settingsChanged = true;
+  }
+  if (settingsChanged) postSettings();
+  if (replayActive && replayQueue.length === 0) {
+    replayActive = false;
+    const finished: ReplayFinished = { type: 'replayFinished' };
+    self.postMessage(finished);
+  }
+}
+
 self.onmessage = (event: MessageEvent) => {
   const message = event.data as WorkerRequest;
   switch (message.type) {
@@ -64,15 +124,18 @@ self.onmessage = (event: MessageEvent) => {
       ticksPerSecond = message.ticksPerSecond;
       break;
     case 'spawnRandomOrganic':
+      recordInput({ tick: simulation.tickCount, type: 'spawnRandomOrganic' });
       simulation.spawnRandomOrganic();
       break;
     case 'spawnOrganicAt':
+      recordInput({ tick: simulation.tickCount, type: 'spawnOrganicAt', position: message.position });
       simulation.spawnOrganicAt(message.position);
       break;
     case 'stepOnce':
       // Runs even while paused: `paused` only gates the automatic loop() below, and a
       // manual step should work regardless of the current tick-rate/accumulator state.
       simulation.step();
+      applyDueReplayInputs();
       postSnapshot();
       break;
     case 'exportState': {
@@ -81,6 +144,11 @@ self.onmessage = (event: MessageEvent) => {
       break;
     }
     case 'importState':
+      // A wholesale replacement invalidates both an in-progress recording (its initial
+      // state is gone) and any pending replay script (its tick numbers no longer apply).
+      cancelRecording();
+      replayQueue = [];
+      replayActive = false;
       settings = message.state.settings;
       simulation = Simulation.fromState(message.state);
       // The old backlog belongs to a simulation that no longer exists; starting the
@@ -92,6 +160,9 @@ self.onmessage = (event: MessageEvent) => {
     case 'applyPreset': {
       const preset = SCENARIO_PRESETS.find((p) => p.id === message.presetId);
       if (!preset) break;
+      cancelRecording();
+      replayQueue = [];
+      replayActive = false;
       simulation = buildScenario(preset);
       settings = simulation.settings;
       // Same reasoning as 'importState': the old backlog belonged to the replaced simulation.
@@ -101,11 +172,50 @@ self.onmessage = (event: MessageEvent) => {
       break;
     }
     case 'updateSettings':
+      recordInput({ tick: simulation.tickCount, type: 'updateSettings', settings: message.settings });
       // Mutates the object `simulation.settings` already holds a reference to, rather than
       // replacing it — every phase function reads settings fresh each tick, so this takes
       // effect on the very next tick with no simulation restart.
       Object.assign(settings, message.settings);
       postSettings();
+      break;
+    case 'startRecording':
+      recording = true;
+      // toState() returns live references — `settings` is the very object `updateSettings`
+      // mutates in place, and each entity in `entities` is the same object phases.ts keeps
+      // mutating tick after tick (only `tickCount`/`rngState`/the counters are plain numbers,
+      // copied by value). `exportState` gets away with this because it hands the result
+      // straight to `postMessage`, whose structured-clone algorithm snapshots it in the same
+      // synchronous turn; here `recordingInitialState` instead sits in a variable for the
+      // whole recording session, so without an explicit deep clone it would keep drifting
+      // forward and, by `stopRecording`, describe the simulation as it looked at *stop* time
+      // while still claiming the tick/RNG state from *start* time — an internally
+      // inconsistent replay that looks like it "plays randomly" once reloaded.
+      recordingInitialState = structuredClone(simulation.toState());
+      recordedInputs = [];
+      postRecordingStatus();
+      break;
+    case 'stopRecording': {
+      if (!recording || !recordingInitialState) break;
+      const replay: Replay = { version: REPLAY_VERSION, initialState: recordingInitialState, inputs: recordedInputs };
+      const recorded: RecordedReplayMessage = { type: 'recordedReplay', replay, endTick: simulation.tickCount };
+      self.postMessage(recorded);
+      recording = false;
+      recordingInitialState = null;
+      recordedInputs = [];
+      postRecordingStatus();
+      break;
+    }
+    case 'importReplay':
+      cancelRecording();
+      settings = message.replay.initialState.settings;
+      simulation = Simulation.fromState(message.replay.initialState);
+      replayQueue = [...message.replay.inputs].sort((a, b) => a.tick - b.tick);
+      replayActive = true;
+      tickAccumulator = 0;
+      applyDueReplayInputs();
+      postSettings();
+      postSnapshot();
       break;
   }
 };
@@ -146,6 +256,7 @@ function loop(): void {
     const budgetEnd = now + TICK_BUDGET_MS;
     while (tickAccumulator >= 1 && performance.now() < budgetEnd) {
       simulation.step();
+      applyDueReplayInputs();
       tickAccumulator -= 1;
       // Posted per tick (not just once after the batch) so a slow tick still shows up as
       // soon as it completes, instead of waiting for the whole catch-up batch to finish.
