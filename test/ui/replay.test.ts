@@ -18,6 +18,7 @@ function validReplay(): Replay {
       entities: [],
     },
     inputs: [{ tick: 3, type: 'spawnRandomOrganic' }],
+    endTick: 5,
   };
 }
 
@@ -42,6 +43,11 @@ describe('isReplay', () => {
 
   it('rejects a replay whose inputs field is not an array', () => {
     expect(isReplay({ ...validReplay(), inputs: 'not an array' })).toBe(false);
+  });
+
+  it('rejects a replay missing endTick (e.g. a pre-endTick recording)', () => {
+    const { endTick: _endTick, ...withoutEndTick } = validReplay();
+    expect(isReplay(withoutEndTick)).toBe(false);
   });
 });
 

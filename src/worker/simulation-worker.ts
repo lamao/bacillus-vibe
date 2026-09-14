@@ -75,8 +75,11 @@ let recordedInputs: RecordedInput[] = [];
 // Replay playback: a loaded replay's inputs, sorted ascending by tick and consumed from
 // the front as the simulation's tickCount catches up to each one — reusing the normal
 // tick loop (and its pause/speed/step controls) rather than a separate fast-forward path.
+// `replayEndTick` is the tick the original recording stopped at (null when no replay is in
+// progress); once the simulation reaches it, playback auto-pauses instead of ticking on
+// into fresh, unrecorded randomness the recording never spoke for.
 let replayQueue: RecordedInput[] = [];
-let replayActive = false;
+let replayEndTick: number | null = null;
 
 function recordInput(input: RecordedInput): void {
   if (!recording) return;
@@ -98,7 +101,14 @@ function postRecordingStatus(): void {
   self.postMessage(status);
 }
 
-/** Applies every replay input due at the simulation's current tick, in order; posts settings if any changed the live tuning panel needs to reflect. */
+/**
+ * Applies every replay input due at the simulation's current tick, in order; posts
+ * settings if any changed the live tuning panel needs to reflect. Once the simulation
+ * reaches the replay's recorded `endTick`, auto-pauses it (checked here rather than only
+ * on a tick count matching some input, since a recording can run ticks after its last
+ * interaction) and reports it via `replayFinished` — `replayEndTick` is nulled out
+ * immediately so this only fires once per loaded replay.
+ */
 function applyDueReplayInputs(): void {
   let settingsChanged = false;
   while (replayQueue.length > 0 && replayQueue[0].tick === simulation.tickCount) {
@@ -107,8 +117,9 @@ function applyDueReplayInputs(): void {
     if (input.type === 'updateSettings') settingsChanged = true;
   }
   if (settingsChanged) postSettings();
-  if (replayActive && replayQueue.length === 0) {
-    replayActive = false;
+  if (replayEndTick !== null && simulation.tickCount >= replayEndTick) {
+    replayEndTick = null;
+    paused = true;
     const finished: ReplayFinished = { type: 'replayFinished' };
     self.postMessage(finished);
   }
@@ -148,7 +159,7 @@ self.onmessage = (event: MessageEvent) => {
       // state is gone) and any pending replay script (its tick numbers no longer apply).
       cancelRecording();
       replayQueue = [];
-      replayActive = false;
+      replayEndTick = null;
       settings = message.state.settings;
       simulation = Simulation.fromState(message.state);
       // The old backlog belongs to a simulation that no longer exists; starting the
@@ -162,7 +173,7 @@ self.onmessage = (event: MessageEvent) => {
       if (!preset) break;
       cancelRecording();
       replayQueue = [];
-      replayActive = false;
+      replayEndTick = null;
       simulation = buildScenario(preset);
       settings = simulation.settings;
       // Same reasoning as 'importState': the old backlog belonged to the replaced simulation.
@@ -197,8 +208,13 @@ self.onmessage = (event: MessageEvent) => {
       break;
     case 'stopRecording': {
       if (!recording || !recordingInitialState) break;
-      const replay: Replay = { version: REPLAY_VERSION, initialState: recordingInitialState, inputs: recordedInputs };
-      const recorded: RecordedReplayMessage = { type: 'recordedReplay', replay, endTick: simulation.tickCount };
+      const replay: Replay = {
+        version: REPLAY_VERSION,
+        initialState: recordingInitialState,
+        inputs: recordedInputs,
+        endTick: simulation.tickCount,
+      };
+      const recorded: RecordedReplayMessage = { type: 'recordedReplay', replay };
       self.postMessage(recorded);
       recording = false;
       recordingInitialState = null;
@@ -211,7 +227,7 @@ self.onmessage = (event: MessageEvent) => {
       settings = message.replay.initialState.settings;
       simulation = Simulation.fromState(message.replay.initialState);
       replayQueue = [...message.replay.inputs].sort((a, b) => a.tick - b.tick);
-      replayActive = true;
+      replayEndTick = message.replay.endTick;
       tickAccumulator = 0;
       applyDueReplayInputs();
       postSettings();
@@ -261,6 +277,10 @@ function loop(): void {
       // Posted per tick (not just once after the batch) so a slow tick still shows up as
       // soon as it completes, instead of waiting for the whole catch-up batch to finish.
       postSnapshotIfDue();
+      // applyDueReplayInputs() may have just auto-paused because a loaded replay reached
+      // its recorded end — stop this batch immediately rather than ticking further past
+      // it before the next loop() call notices `paused`.
+      if (paused) break;
     }
   }
 

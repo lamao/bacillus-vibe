@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyRecordedInput, Replay } from '../../src/engine/replay';
+import { applyRecordedInput, Replay, REPLAY_VERSION } from '../../src/engine/replay';
 import { Simulation, SIMULATION_STATE_VERSION, SimulationState } from '../../src/engine/simulation';
-import { ExportedState, RecordedReplayMessage, WorkerRequest, WorkerResponse } from '../../src/worker/protocol';
+import {
+  ExportedState,
+  RecordedReplayMessage,
+  ReplayFinished,
+  SimulationSnapshot,
+  WORKER_LOOP_FPS,
+  WorkerRequest,
+  WorkerResponse,
+} from '../../src/worker/protocol';
 import { dna, organic, testSettings } from '../engine/fixtures';
+
+/** Matches simulation-worker.ts's own SNAPSHOT_INTERVAL_MS (not exported), the automatic loop()'s setInterval period. */
+const SNAPSHOT_INTERVAL_MS = 1000 / WORKER_LOOP_FPS;
 
 /**
  * Drives the actual worker module's message-handling logic (`self.onmessage`) directly,
@@ -129,7 +140,7 @@ describe('simulation-worker recording/replay (#33)', () => {
       }
     };
     applyDue();
-    while (reconstructed.tickCount < recorded.endTick) {
+    while (reconstructed.tickCount < replay.endTick) {
       reconstructed.step();
       applyDue();
     }
@@ -138,5 +149,36 @@ describe('simulation-worker recording/replay (#33)', () => {
     expect(reconstructed.grid.entities()).toEqual(exported.state.entities);
     expect(reconstructed.totalBirths).toBe(exported.state.totalBirths);
     expect(reconstructed.totalDeaths).toBe(exported.state.totalDeaths);
+  });
+
+  it('stops the automatically-ticking simulation exactly at the replay\'s recorded end, however much real time passes', async () => {
+    const worker = await loadWorker();
+
+    worker.send({ type: 'importState', state: baseState({ rngState: 55 }) });
+    const replay: Replay = {
+      version: REPLAY_VERSION,
+      initialState: baseState({ rngState: 55 }),
+      inputs: [],
+      endTick: 4,
+    };
+    worker.send({ type: 'importReplay', replay });
+
+    // Left running (never paused) with plenty of real time to work with — at the default
+    // 60 ticks/s and a ~60Hz loop(), each interval firing accumulates about one tick, so
+    // 20 firings is far more than the 4 ticks the replay actually calls for.
+    vi.advanceTimersByTime(SNAPSHOT_INTERVAL_MS * 20);
+
+    const snapshotsAfterFirstBurst = worker.messages.filter((m): m is SimulationSnapshot => m.type === 'state');
+    const finishedMessages = worker.messages.filter((m): m is ReplayFinished => m.type === 'replayFinished');
+    expect(snapshotsAfterFirstBurst[snapshotsAfterFirstBurst.length - 1].tickCount).toBe(4);
+    expect(finishedMessages).toHaveLength(1);
+
+    // Advancing a great deal more real time must not resume ticking (it stays paused
+    // internally, exactly like a user-initiated pause would) or re-fire 'replayFinished'.
+    vi.advanceTimersByTime(SNAPSHOT_INTERVAL_MS * 200);
+    const snapshotsAfterSecondBurst = worker.messages.filter((m): m is SimulationSnapshot => m.type === 'state');
+    const finishedMessagesAfterSecondBurst = worker.messages.filter((m): m is ReplayFinished => m.type === 'replayFinished');
+    expect(snapshotsAfterSecondBurst[snapshotsAfterSecondBurst.length - 1].tickCount).toBe(4);
+    expect(finishedMessagesAfterSecondBurst).toHaveLength(1);
   });
 });

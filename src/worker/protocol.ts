@@ -75,14 +75,17 @@ export interface RecordingStatus {
   recordedCount: number;
 }
 
-/** Reply to `stopRecording`, carrying the finished replay (#33) plus the tick it ends at, for naming the downloaded file. */
+/** Reply to `stopRecording`, carrying the finished replay (#33), `endTick` included, ready to download as-is. */
 export interface RecordedReplayMessage {
   type: 'recordedReplay';
   replay: Replay;
-  endTick: number;
 }
 
-/** Posted once when a loaded replay's inputs have all been applied and the simulation has caught up to them. */
+/**
+ * Posted once a loaded replay's simulation reaches its recorded `endTick` — the worker
+ * pauses itself at the same instant, so the main thread only needs to mirror that into its
+ * own pause-button state, not request it.
+ */
 export interface ReplayFinished {
   type: 'replayFinished';
 }

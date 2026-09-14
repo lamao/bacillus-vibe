@@ -62,7 +62,7 @@ describe('Replay (#33)', () => {
     const initialState = live.toState();
     runWithInputs(live, 20, inputs);
 
-    const replay: Replay = { version: REPLAY_VERSION, initialState, inputs };
+    const replay: Replay = { version: REPLAY_VERSION, initialState, inputs, endTick: 20 };
 
     const restored = Simulation.fromState(replay.initialState);
     runWithInputs(restored, 20, replay.inputs);
@@ -80,7 +80,7 @@ describe('Replay (#33)', () => {
     const inputs: Replay['inputs'] = [{ tick: 0, type: 'spawnRandomOrganic' }];
     const initialState = live.toState();
     runWithInputs(live, 6, inputs);
-    const replay: Replay = { version: REPLAY_VERSION, initialState, inputs };
+    const replay: Replay = { version: REPLAY_VERSION, initialState, inputs, endTick: 6 };
 
     const roundTripped = JSON.parse(JSON.stringify(replay)) as Replay;
     const restored = Simulation.fromState(roundTripped.initialState);

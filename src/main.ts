@@ -426,11 +426,15 @@ worker.onmessage = (event: MessageEvent) => {
     return;
   }
   if (message.type === 'recordedReplay') {
-    downloadReplay(message.replay, message.endTick);
+    downloadReplay(message.replay);
     flashHint('Replay exported');
     return;
   }
   if (message.type === 'replayFinished') {
+    // The worker already paused itself the instant it reached the replay's recorded end
+    // (see simulation-worker.ts's applyDueReplayInputs) — mirror that into the pause
+    // button/tic-btn without echoing a redundant 'setPaused' back to it.
+    setPausedState(true, false);
     flashHint('Replay finished');
     return;
   }
@@ -470,13 +474,21 @@ const resizeCanvas = (): void => {
 new ResizeObserver(resizeCanvas).observe(canvasWrap);
 resizeCanvas();
 
-const togglePause = (): void => {
-  paused = !paused;
+/**
+ * Sets the pause state directly (as opposed to toggling it) and reflects it onto the
+ * pause icon/tic-btn — shared by the user's own pause toggle and by the worker's
+ * `replayFinished` notification (#33), which auto-pauses itself once a loaded replay
+ * reaches its recorded end and needs the UI to catch up without re-requesting it.
+ */
+const setPausedState = (next: boolean, notifyWorker: boolean): void => {
+  paused = next;
   pauseIconUse.setAttribute('href', paused ? '#ic-play' : '#ic-pause');
   pauseBtn.title = paused ? 'Resume the simulation (Space)' : 'Pause the simulation (Space)';
   ticBtn.classList.toggle('hidden', !paused);
-  postToWorker({ type: 'setPaused', paused });
+  if (notifyWorker) postToWorker({ type: 'setPaused', paused });
 };
+
+const togglePause = (): void => setPausedState(!paused, true);
 pauseBtn.addEventListener('click', togglePause);
 
 const stepOnce = (): void => {

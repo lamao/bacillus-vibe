@@ -10,7 +10,9 @@ import { isSimulationState } from './persistence';
 export function isReplay(value: unknown): value is Replay {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  return v.version === REPLAY_VERSION && isSimulationState(v.initialState) && Array.isArray(v.inputs);
+  return (
+    v.version === REPLAY_VERSION && isSimulationState(v.initialState) && Array.isArray(v.inputs) && typeof v.endTick === 'number'
+  );
 }
 
 /** Parses a replay file, returning null (never throwing) on invalid JSON or shape. */
@@ -24,13 +26,13 @@ export function parseReplay(json: string): Replay | null {
 }
 
 /** Triggers a browser download of `replay` as a shareable JSON file (#33). */
-export function downloadReplay(replay: Replay, endTick: number): void {
+export function downloadReplay(replay: Replay): void {
   const blob = new Blob([JSON.stringify(replay, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');
     link.href = url;
-    link.download = `petri-replay-tick${endTick}.json`;
+    link.download = `petri-replay-tick${replay.endTick}.json`;
     link.click();
   } finally {
     URL.revokeObjectURL(url);

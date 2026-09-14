@@ -3,7 +3,7 @@ import { TunableSettings } from './settings';
 import { Position } from './types';
 
 /** Bumped whenever {@link Replay}'s shape changes in a way old replay files can't be read as. */
-export const REPLAY_VERSION = 1;
+export const REPLAY_VERSION = 2;
 
 /**
  * One user interaction captured during recording (#33), tagged with the tick count the
@@ -30,6 +30,14 @@ export interface Replay {
   version: number;
   initialState: SimulationState;
   inputs: RecordedInput[];
+  /**
+   * The tick the original recording ended at (`initialState.tickCount` plus however many
+   * ticks ran before `stopRecording`). Played back, the simulation stops advancing the
+   * instant it reaches this tick — the recording only speaks for what happened up to
+   * there, so continuing past it would just be fresh, unrecorded randomness rather than a
+   * "replay" of anything.
+   */
+  endTick: number;
 }
 
 /** Applies one recorded interaction directly to `simulation`, the same effect it had live. */
