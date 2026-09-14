@@ -891,6 +891,30 @@ menuExportBtn.addEventListener('click', () => {
 
 menuLoadBtn.addEventListener('click', doLoad);
 
+/**
+ * Shared by both "Import from file" and "Import replay" (#33): the two file pickers sit in
+ * separate Controls-menu groups but look near-identical (same icon, one menu-item apart),
+ * so a save file dropped into the replay picker or vice versa is an easy mix-up — trying
+ * the other shape before giving up means either entry point accepts either kind of file,
+ * instead of failing with a misleading "Invalid save/replay file" for a perfectly good file
+ * that just went in the "wrong" slot.
+ */
+const handleImportedFile = (text: string): void => {
+  const state = parseSnapshot(text);
+  if (state) {
+    postToWorker({ type: 'importState', state });
+    flashHint('Imported');
+    return;
+  }
+  const replay = parseReplay(text);
+  if (replay) {
+    postToWorker({ type: 'importReplay', replay });
+    flashHint('Replay loaded');
+    return;
+  }
+  flashHint('Invalid file');
+};
+
 menuImportBtn.addEventListener('click', () => {
   importFileInput.click();
   closeControlsMenu();
@@ -901,18 +925,7 @@ importFileInput.addEventListener('change', () => {
   // Cleared so picking the same file again still fires 'change'.
   importFileInput.value = '';
   if (!file) return;
-  file
-    .text()
-    .then((text) => {
-      const state = parseSnapshot(text);
-      if (!state) {
-        flashHint('Invalid save file');
-        return;
-      }
-      postToWorker({ type: 'importState', state });
-      flashHint('Imported');
-    })
-    .catch(() => flashHint('Could not read file'));
+  file.text().then(handleImportedFile).catch(() => flashHint('Could not read file'));
 });
 
 /**
@@ -951,18 +964,7 @@ importReplayInput.addEventListener('change', () => {
   // Cleared so picking the same file again still fires 'change'.
   importReplayInput.value = '';
   if (!file) return;
-  file
-    .text()
-    .then((text) => {
-      const replay = parseReplay(text);
-      if (!replay) {
-        flashHint('Invalid replay file');
-        return;
-      }
-      postToWorker({ type: 'importReplay', replay });
-      flashHint('Replay loaded');
-    })
-    .catch(() => flashHint('Could not read file'));
+  file.text().then(handleImportedFile).catch(() => flashHint('Could not read file'));
 });
 
 inspectBtn.addEventListener('click', toggleInspectMode);

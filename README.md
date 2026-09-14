@@ -152,6 +152,12 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   reply triggers a browser download the same way Export does for a save
   file — plus an "Import replay" file picker that posts `importReplay` to
   load one back in and start it playing at the current speed/pause state.
+  Save/Load's "Import from file" and Replay's "Import replay" are two
+  entries a menu apart with the same icon, so a save picked into the
+  replay slot (or vice versa) is an easy mix-up — both share
+  `handleImportedFile`, which tries `parseSnapshot` then `parseReplay`
+  before giving up, so either file picker accepts either kind of file
+  rather than rejecting a perfectly good one for going in the "wrong" slot.
 
 ## Replay files (#33)
 
