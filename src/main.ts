@@ -26,6 +26,7 @@ import {
 } from './ui/highlight';
 import { computeMutationStats } from './ui/mutations';
 import { downloadSnapshot, loadQuickResume, parseSnapshot, saveQuickResume } from './ui/persistence';
+import { downloadReplay, parseReplay } from './ui/replay';
 import { ActiveHighlight, Renderer, SUBSTANCE_COLORS } from './ui/renderer';
 import { defaultTunableSettings, SETTING_CONTROL_GROUPS, specsInGroup } from './ui/settingsControls';
 import { StatsDrawer } from './ui/statsDrawer';
@@ -246,6 +247,10 @@ const ICON_DEFS_SVG = `
         d="M12 4.5 V6.5 M12 17.5 V19.5 M4.5 12 H6.5 M17.5 12 H19.5 M6.5 6.5 L8 8 M16 16 L17.5 17.5 M17.5 6.5 L16 8 M8 16 L6.5 17.5"
       />
     </symbol>
+    <symbol id="ic-record" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="7.5" />
+      <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -318,6 +323,10 @@ const menuLoadBtn = document.querySelector<HTMLButtonElement>('#menu-load-btn');
 const menuExportBtn = document.querySelector<HTMLButtonElement>('#menu-export-btn');
 const menuImportBtn = document.querySelector<HTMLButtonElement>('#menu-import-btn');
 const importFileInput = document.querySelector<HTMLInputElement>('#import-file-input');
+const menuRecordBtn = document.querySelector<HTMLButtonElement>('#menu-record-btn');
+const menuRecordLabel = document.querySelector<HTMLElement>('#menu-record-label');
+const menuImportReplayBtn = document.querySelector<HTMLButtonElement>('#menu-import-replay-btn');
+const importReplayInput = document.querySelector<HTMLInputElement>('#import-replay-input');
 
 if (
   !canvas ||
@@ -358,7 +367,11 @@ if (
   !menuLoadBtn ||
   !menuExportBtn ||
   !menuImportBtn ||
-  !importFileInput
+  !importFileInput ||
+  !menuRecordBtn ||
+  !menuRecordLabel ||
+  !menuImportReplayBtn ||
+  !importReplayInput
 ) {
   throw new Error('Petri: expected page elements were not found');
 }
@@ -408,6 +421,23 @@ worker.onmessage = (event: MessageEvent) => {
     }
     return;
   }
+  if (message.type === 'recordingStatus') {
+    syncRecordButton(message.recording, message.recordedCount);
+    return;
+  }
+  if (message.type === 'recordedReplay') {
+    downloadReplay(message.replay);
+    flashHint('Replay exported');
+    return;
+  }
+  if (message.type === 'replayFinished') {
+    // The worker already paused itself the instant it reached the replay's recorded end
+    // (see simulation-worker.ts's applyDueReplayInputs) — mirror that into the pause
+    // button/tic-btn without echoing a redundant 'setPaused' back to it.
+    setPausedState(true, false);
+    flashHint('Replay finished');
+    return;
+  }
   latestSnapshot = message;
   entityByPosition = new Map(message.entities.map((entity) => [`${entity.position.x},${entity.position.y}`, entity]));
   organicById = new Map(
@@ -444,13 +474,21 @@ const resizeCanvas = (): void => {
 new ResizeObserver(resizeCanvas).observe(canvasWrap);
 resizeCanvas();
 
-const togglePause = (): void => {
-  paused = !paused;
+/**
+ * Sets the pause state directly (as opposed to toggling it) and reflects it onto the
+ * pause icon/tic-btn — shared by the user's own pause toggle and by the worker's
+ * `replayFinished` notification (#33), which auto-pauses itself once a loaded replay
+ * reaches its recorded end and needs the UI to catch up without re-requesting it.
+ */
+const setPausedState = (next: boolean, notifyWorker: boolean): void => {
+  paused = next;
   pauseIconUse.setAttribute('href', paused ? '#ic-play' : '#ic-pause');
   pauseBtn.title = paused ? 'Resume the simulation (Space)' : 'Pause the simulation (Space)';
   ticBtn.classList.toggle('hidden', !paused);
-  postToWorker({ type: 'setPaused', paused });
+  if (notifyWorker) postToWorker({ type: 'setPaused', paused });
 };
+
+const togglePause = (): void => setPausedState(!paused, true);
 pauseBtn.addEventListener('click', togglePause);
 
 const stepOnce = (): void => {
@@ -853,6 +891,30 @@ menuExportBtn.addEventListener('click', () => {
 
 menuLoadBtn.addEventListener('click', doLoad);
 
+/**
+ * Shared by both "Import from file" and "Import replay" (#33): the two file pickers sit in
+ * separate Controls-menu groups but look near-identical (same icon, one menu-item apart),
+ * so a save file dropped into the replay picker or vice versa is an easy mix-up — trying
+ * the other shape before giving up means either entry point accepts either kind of file,
+ * instead of failing with a misleading "Invalid save/replay file" for a perfectly good file
+ * that just went in the "wrong" slot.
+ */
+const handleImportedFile = (text: string): void => {
+  const state = parseSnapshot(text);
+  if (state) {
+    postToWorker({ type: 'importState', state });
+    flashHint('Imported');
+    return;
+  }
+  const replay = parseReplay(text);
+  if (replay) {
+    postToWorker({ type: 'importReplay', replay });
+    flashHint('Replay loaded');
+    return;
+  }
+  flashHint('Invalid file');
+};
+
 menuImportBtn.addEventListener('click', () => {
   importFileInput.click();
   closeControlsMenu();
@@ -863,19 +925,48 @@ importFileInput.addEventListener('change', () => {
   // Cleared so picking the same file again still fires 'change'.
   importFileInput.value = '';
   if (!file) return;
-  file
-    .text()
-    .then((text) => {
-      const state = parseSnapshot(text);
-      if (!state) {
-        flashHint('Invalid save file');
-        return;
-      }
-      postToWorker({ type: 'importState', state });
-      flashHint('Imported');
-    })
-    .catch(() => flashHint('Could not read file'));
+  file.text().then(handleImportedFile).catch(() => flashHint('Could not read file'));
 });
+
+/**
+ * Record/replay (#33): "Start recording" begins logging every add-creature click and
+ * settings change on top of the current simulation state; clicking again stops the
+ * recording and downloads it as a shareable replay file (the worker's `recordedReplay`
+ * reply above triggers the actual download). `syncRecordButton` reflects the worker's own
+ * `recording`/`recordedCount` — the source of truth — onto the menu row, mirroring how the
+ * settings panel is kept in sync from the worker's 'settings' message.
+ */
+let isRecording = false;
+
+const syncRecordButton = (recording: boolean, recordedCount: number): void => {
+  isRecording = recording;
+  menuRecordBtn.setAttribute('aria-checked', String(recording));
+  menuRecordLabel.textContent = recording ? `Stop recording (${recordedCount})` : 'Start recording';
+};
+
+const toggleRecording = (): void => {
+  postToWorker({ type: isRecording ? 'stopRecording' : 'startRecording' });
+  if (!isRecording) flashHint('Recording started');
+};
+
+menuRecordBtn.addEventListener('click', () => {
+  toggleRecording();
+  closeControlsMenu();
+});
+
+menuImportReplayBtn.addEventListener('click', () => {
+  importReplayInput.click();
+  closeControlsMenu();
+});
+
+importReplayInput.addEventListener('change', () => {
+  const file = importReplayInput.files?.[0] ?? null;
+  // Cleared so picking the same file again still fires 'change'.
+  importReplayInput.value = '';
+  if (!file) return;
+  file.text().then(handleImportedFile).catch(() => flashHint('Could not read file'));
+});
+
 inspectBtn.addEventListener('click', toggleInspectMode);
 
 inspectorCloseBtn.addEventListener('click', exitInspectMode);
@@ -997,6 +1088,10 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       event.preventDefault();
       toggleLegend();
       syncControlsMenu();
+      break;
+    case 'KeyR':
+      event.preventDefault();
+      toggleRecording();
       break;
     case 'KeyD':
       event.preventDefault();
