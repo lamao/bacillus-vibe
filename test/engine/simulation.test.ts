@@ -124,6 +124,19 @@ describe('Simulation', () => {
     expect(blocked).toBeNull();
   });
 
+  it('eraseAt clears whatever occupies a cell, and is a no-op on an already-empty one', () => {
+    const sim = new Simulation(testSettings(), new MockRNG([0.5]));
+    sim.spawnOrganicAt({ x: 2, y: 2 }, dna());
+    sim.spawnMineralAt({ x: 3, y: 3 }, 'Blue', 300);
+
+    sim.eraseAt({ x: 2, y: 2 });
+    expect(sim.grid.get(2, 2)).toBeNull();
+    sim.eraseAt({ x: 3, y: 3 });
+    expect(sim.grid.get(3, 3)).toBeNull();
+
+    expect(() => sim.eraseAt({ x: 4, y: 4 })).not.toThrow();
+  });
+
   it('spawnRandomMineral places on a free cell and returns null once the grid is full', () => {
     const settings = testSettings({ width: 1, height: 1 });
     const sim = new Simulation(settings, new MockRNG([0]));

@@ -182,3 +182,51 @@ describe('simulation-worker recording/replay (#33)', () => {
     expect(finishedMessagesAfterSecondBurst).toHaveLength(1);
   });
 });
+
+describe('simulation-worker god mode (#30)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('spawnMineralAt places a mineral and records it while recording is active', async () => {
+    const worker = await loadWorker();
+    worker.send({ type: 'importState', state: baseState() });
+    worker.send({ type: 'startRecording' });
+    worker.send({ type: 'spawnMineralAt', position: { x: 2, y: 2 }, substance: 'Blue', size: 400 });
+    worker.send({ type: 'stopRecording' });
+
+    const recorded = lastOfType<RecordedReplayMessage>(worker.messages, 'recordedReplay')!;
+    expect(recorded.replay.inputs).toContainEqual({
+      tick: 0,
+      type: 'spawnMineralAt',
+      position: { x: 2, y: 2 },
+      substance: 'Blue',
+      size: 400,
+    });
+
+    worker.send({ type: 'exportState' });
+    const exported = lastOfType<ExportedState>(worker.messages, 'exportedState')!;
+    expect(exported.state.entities).toContainEqual({ kind: 'mineral', position: { x: 2, y: 2 }, substance: 'Blue', size: 400 });
+  });
+
+  it('erase clears a cell and records it while recording is active', async () => {
+    const worker = await loadWorker();
+    const seedOrganic = organic({ x: 3, y: 3 }, { dna: dna() });
+    worker.send({ type: 'importState', state: baseState({ entities: [seedOrganic] }) });
+    worker.send({ type: 'startRecording' });
+    worker.send({ type: 'erase', position: { x: 3, y: 3 } });
+    worker.send({ type: 'stopRecording' });
+
+    const recorded = lastOfType<RecordedReplayMessage>(worker.messages, 'recordedReplay')!;
+    expect(recorded.replay.inputs).toContainEqual({ tick: 0, type: 'erase', position: { x: 3, y: 3 } });
+
+    worker.send({ type: 'exportState' });
+    const exported = lastOfType<ExportedState>(worker.messages, 'exportedState')!;
+    expect(exported.state.entities.some((e) => e.position.x === 3 && e.position.y === 3)).toBe(false);
+  });
+});

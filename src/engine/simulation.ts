@@ -115,6 +115,11 @@ export class Simulation {
     return this.spawnMineralAt(position, substance, size);
   }
 
+  /** Clears whatever entity (organic or mineral) occupies `position`, or does nothing if it's already empty — god mode's Erase brush (#30). */
+  eraseAt(position: Position): void {
+    this.grid.clear(position.x, position.y);
+  }
+
   /** A uniformly random free cell, or null if the grid is full. */
   private randomFreePosition(): Position | null {
     const free: Position[] = [];

@@ -1,7 +1,7 @@
 import { Replay } from '../engine/replay';
 import { SimulationState } from '../engine/simulation';
 import { Settings, TunableSettings } from '../engine/settings';
-import { GridView, Position } from '../engine/types';
+import { GridView, Position, Substance } from '../engine/types';
 
 /**
  * How often the main thread draws + updates the DOM. This simulation's visuals don't
@@ -25,6 +25,8 @@ export type WorkerRequest =
   | { type: 'setTicksPerSecond'; ticksPerSecond: number }
   | { type: 'spawnRandomOrganic' }
   | { type: 'spawnOrganicAt'; position: Position }
+  | { type: 'spawnMineralAt'; position: Position; substance: Substance; size: number }
+  | { type: 'erase'; position: Position }
   | { type: 'stepOnce' }
   | { type: 'exportState' }
   | { type: 'importState'; state: SimulationState }

@@ -12,7 +12,7 @@ import {
   substanceOf,
 } from './engine/types';
 import { SCENARIO_PRESETS } from './engine/presets';
-import { Settings, TunableSettingKey } from './engine/settings';
+import { defaultSettings, Settings, TunableSettingKey } from './engine/settings';
 import { computeAverageRatios, ZERO_AVERAGE_RATIOS } from './ui/averages';
 import {
   CategoricalHighlightField,
@@ -251,6 +251,14 @@ const ICON_DEFS_SVG = `
       <circle cx="12" cy="12" r="7.5" />
       <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
     </symbol>
+    <symbol id="ic-brush" viewBox="0 0 24 24">
+      <path d="M15 4.5 L19.5 9 L10 18.5 H5 V13.5 Z" />
+      <path d="M7 16.5 L4 20" />
+    </symbol>
+    <symbol id="ic-erase" viewBox="0 0 24 24">
+      <rect x="4.5" y="4.5" width="15" height="15" rx="2" />
+      <path d="M8.5 8.5 L15.5 15.5 M15.5 8.5 L8.5 15.5" />
+    </symbol>
   </defs>
 </svg>`;
 
@@ -290,6 +298,12 @@ const pauseIconUse = document.querySelector<SVGUseElement>('#pause-icon-use');
 const ticBtn = document.querySelector<HTMLButtonElement>('#tic-btn');
 const addBtn = document.querySelector<HTMLButtonElement>('#add-btn');
 const inspectBtn = document.querySelector<HTMLButtonElement>('#inspect-btn');
+const toolBtn = document.querySelector<HTMLButtonElement>('#tool-btn');
+const toolPanelEl = document.querySelector<HTMLElement>('#tool-panel');
+const toolPanelBackdropEl = document.querySelector<HTMLElement>('#tool-panel-backdrop');
+const toolPanelCloseBtn = document.querySelector<HTMLButtonElement>('#tool-panel-close');
+const toolListEl = document.querySelector<HTMLElement>('#tool-list');
+const toolSubstanceRowEl = document.querySelector<HTMLElement>('#tool-substance-row');
 const settingsBtn = document.querySelector<HTMLButtonElement>('#settings-btn');
 const inspectorEl = document.querySelector<HTMLElement>('#inspector');
 const inspectorContentEl = document.querySelector<HTMLElement>('#inspector-content');
@@ -335,6 +349,12 @@ if (
   !ticBtn ||
   !addBtn ||
   !inspectBtn ||
+  !toolBtn ||
+  !toolPanelEl ||
+  !toolPanelBackdropEl ||
+  !toolPanelCloseBtn ||
+  !toolListEl ||
+  !toolSubstanceRowEl ||
   !settingsBtn ||
   !inspectorEl ||
   !inspectorContentEl ||
@@ -463,6 +483,23 @@ let selectedStateIndex: number | null = null;
 /** Cell-highlight condition (#78) — purely transient UI state, never serialized; resets to off implicitly on page reload since nothing persists it. */
 let highlightState: HighlightState = defaultHighlightState();
 
+/**
+ * God mode (#30): what tapping the grid does, outside of inspect mode. `mineral` and
+ * `toxin` place the exact same kind of entity (a `Mineral`) at the same substance picker —
+ * the engine has no dedicated "toxin" substance, since toxin damage is already just any
+ * entity whose substance matches the *organic's own* `dna.toxin` (see `applyToxin` in
+ * `engine/phases.ts`), so a placed mineral is simultaneously food for some organics and
+ * toxin for others depending on their DNA, not on which tool placed it. The two tools only
+ * differ in the size placed: `toxin` uses a much larger dose (`settings.maxSize`) than
+ * `mineral`'s food-portion-sized default (`settings.defaultSize`), so picking "Toxin" reads
+ * as "drop something dangerous" versus "drop a snack" even though the engine treats them
+ * identically.
+ */
+type GodModeTool = 'organic' | 'mineral' | 'toxin' | 'erase';
+let activeTool: GodModeTool = 'organic';
+/** Substance placed by the `mineral`/`toxin` tools; irrelevant for `organic`/`erase`. */
+let toolSubstance: Substance = PHYSICAL_SUBSTANCES[0];
+
 // A ResizeObserver (rather than only window 'resize'/'orientationchange') tracks
 // canvas-wrap's actual box, so the canvas stays correctly sized even when layout
 // shifts for reasons other than a viewport resize (e.g. the footer wrapping onto
@@ -576,8 +613,20 @@ document.addEventListener('click', (event) => {
   closeControlsMenu();
 });
 
-/** What the hint text shows absent any transient message — depends on inspect mode. */
-const defaultHint = (): string => (inspectMode ? 'Tap a cell to inspect it' : 'Tap the grid to add a creature');
+/** What the hint text shows absent any transient message — depends on inspect mode, then the active god-mode tool. */
+const defaultHint = (): string => {
+  if (inspectMode) return 'Tap a cell to inspect it';
+  switch (activeTool) {
+    case 'organic':
+      return 'Tap the grid to add a creature';
+    case 'mineral':
+      return `Tap the grid to add ${toolSubstance} food`;
+    case 'toxin':
+      return `Tap the grid to add ${toolSubstance} toxin`;
+    case 'erase':
+      return 'Tap the grid to erase a cell';
+  }
+};
 
 /** Turns off inspect mode and hides the inspector, however it was entered. */
 const exitInspectMode = (): void => {
@@ -857,6 +906,100 @@ settingsResetBtn.addEventListener('click', () => {
 });
 
 /**
+ * God mode (#30): a tool panel (opened via the footer's brush button, same pattern as the
+ * settings panel above) picking what tapping the grid does — Organic (the pre-existing
+ * behavior), Mineral/Toxin (both place a `Mineral`, only their default size differs — see
+ * the `GodModeTool` doc comment above), and Erase. Mineral/Toxin also show a substance
+ * swatch row, reusing the same swatch markup/styling as the Highlight menu's value picker.
+ */
+const TOOL_ORDER: readonly GodModeTool[] = ['organic', 'mineral', 'toxin', 'erase'];
+const TOOL_LABELS: Record<GodModeTool, string> = {
+  organic: 'Organic',
+  mineral: 'Food mineral',
+  toxin: 'Toxin',
+  erase: 'Erase',
+};
+const TOOL_ICONS: Record<GodModeTool, string> = {
+  organic: 'ic-plus',
+  mineral: 'ic-flask',
+  toxin: 'ic-hazard',
+  erase: 'ic-erase',
+};
+const toolRows = new Map<GodModeTool, HTMLButtonElement>();
+
+/** Whether `tool` needs the substance swatch row (both minerals do; organic/erase don't). */
+const toolNeedsSubstance = (tool: GodModeTool): boolean => tool === 'mineral' || tool === 'toxin';
+
+const toolSubstanceButtons = new Map<Substance, HTMLButtonElement>();
+
+const syncToolPanel = (): void => {
+  for (const [tool, row] of toolRows) {
+    row.setAttribute('aria-checked', String(activeTool === tool));
+  }
+  toolSubstanceRowEl.classList.toggle('hidden', !toolNeedsSubstance(activeTool));
+  for (const [substance, button] of toolSubstanceButtons) {
+    button.setAttribute('aria-checked', String(substance === toolSubstance));
+  }
+};
+
+for (const tool of TOOL_ORDER) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'controls-menu-row';
+  row.setAttribute('role', 'menuitemradio');
+  row.setAttribute('aria-checked', 'false');
+  row.appendChild(buildIcon(TOOL_ICONS[tool], 'btn-icon'));
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = TOOL_LABELS[tool];
+  row.appendChild(label);
+  row.addEventListener('click', () => {
+    activeTool = tool;
+    syncToolPanel();
+    if (!inspectMode) hintEl.textContent = defaultHint();
+  });
+  toolRows.set(tool, row);
+  toolListEl.appendChild(row);
+}
+
+for (const substance of PHYSICAL_SUBSTANCES) {
+  const swatch = document.createElement('button');
+  swatch.type = 'button';
+  swatch.className = 'highlight-value-swatch';
+  swatch.style.backgroundColor = SUBSTANCE_COLORS[substance];
+  swatch.title = substance;
+  swatch.setAttribute('role', 'menuitemradio');
+  swatch.addEventListener('click', () => {
+    toolSubstance = substance;
+    syncToolPanel();
+    if (!inspectMode) hintEl.textContent = defaultHint();
+  });
+  toolSubstanceButtons.set(substance, swatch);
+  toolSubstanceRowEl.appendChild(swatch);
+}
+
+syncToolPanel();
+
+const closeToolPanel = (): void => {
+  toolPanelEl.classList.add('hidden');
+  toolBtn.setAttribute('aria-pressed', 'false');
+};
+
+const openToolPanel = (): void => {
+  toolPanelEl.classList.remove('hidden');
+  toolBtn.setAttribute('aria-pressed', 'true');
+};
+
+const toggleToolPanel = (): void => {
+  if (toolPanelEl.classList.contains('hidden')) openToolPanel();
+  else closeToolPanel();
+};
+
+toolBtn.addEventListener('click', toggleToolPanel);
+toolPanelCloseBtn.addEventListener('click', closeToolPanel);
+toolPanelBackdropEl.addEventListener('click', closeToolPanel);
+
+/**
  * Save/load (#29): "Save"/"Load" round-trip a snapshot through this browser's localStorage
  * for quick resume; "Export"/"Import" round-trip it through a downloaded/picked JSON file
  * for sharing with someone else. Save/Load are also reachable via the Shift+S/L hotkeys
@@ -999,8 +1142,31 @@ canvas.addEventListener('pointerdown', (event: PointerEvent) => {
     const tapped = entityByPosition.get(`${cell.x},${cell.y}`);
     inspectedTarget = tapped?.kind === 'organic' ? { type: 'entity', id: tapped.id } : { type: 'cell', position: cell };
     selectedStateIndex = null;
-  } else {
-    postToWorker({ type: 'spawnOrganicAt', position: cell });
+    return;
+  }
+  switch (activeTool) {
+    case 'organic':
+      postToWorker({ type: 'spawnOrganicAt', position: cell });
+      break;
+    case 'mineral':
+      postToWorker({
+        type: 'spawnMineralAt',
+        position: cell,
+        substance: toolSubstance,
+        size: engineSettings?.defaultSize ?? defaultSettings().defaultSize,
+      });
+      break;
+    case 'toxin':
+      postToWorker({
+        type: 'spawnMineralAt',
+        position: cell,
+        substance: toolSubstance,
+        size: engineSettings?.maxSize ?? defaultSettings().maxSize,
+      });
+      break;
+    case 'erase':
+      postToWorker({ type: 'erase', position: cell });
+      break;
   }
 });
 
@@ -1028,6 +1194,8 @@ const closeTopmostOverlay = (): void => {
     closeControlsMenu();
   } else if (!settingsPanelEl.classList.contains('hidden')) {
     closeSettingsPanel();
+  } else if (!toolPanelEl.classList.contains('hidden')) {
+    closeToolPanel();
   } else if (!iconLegendEl.classList.contains('hidden')) {
     closeLegend();
   } else if (inspectMode) {
@@ -1071,6 +1239,10 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     case 'KeyI':
       event.preventDefault();
       toggleInspectMode();
+      break;
+    case 'KeyT':
+      event.preventDefault();
+      toggleToolPanel();
       break;
     case 'KeyG':
       event.preventDefault();

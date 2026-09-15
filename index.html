@@ -79,6 +79,15 @@
               </div>
             </div>
           </div>
+          <div id="tool-panel" class="icon-legend hidden">
+            <div id="tool-panel-backdrop" class="icon-legend-backdrop"></div>
+            <div class="icon-legend-panel" role="dialog" aria-modal="true" aria-label="God mode tools">
+              <button id="tool-panel-close" type="button" class="icon-legend-close" aria-label="Close tools" title="Close tools (Esc)">&times;</button>
+              <h2 class="icon-legend-title">God mode</h2>
+              <div id="tool-list"></div>
+              <div id="tool-substance-row" class="highlight-value-row hidden"></div>
+            </div>
+          </div>
         </div>
       </main>
       <footer id="controls">
@@ -93,6 +102,9 @@
         </button>
         <button id="inspect-btn" type="button" class="icon-btn" aria-pressed="false" title="Inspect cells on the grid (I)">
           <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"></use></svg>
+        </button>
+        <button id="tool-btn" type="button" class="icon-btn" aria-pressed="false" title="God mode: pick what tapping the grid does (T)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-brush"></use></svg>
         </button>
         <button id="settings-btn" type="button" class="icon-btn" aria-pressed="false" title="Live-tune engine settings (G)">
           <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg>
@@ -194,6 +206,7 @@
               <kbd>S</kbd><span>Step one tick (while paused)</span>
               <kbd>A</kbd><span>Add creature</span>
               <kbd>I</kbd><span>Inspect mode</span>
+              <kbd>T</kbd><span>God mode tools</span>
               <kbd>G</kbd><span>Engine settings panel</span>
               <kbd>&minus; / =</kbd><span>Simulation speed</span>
               <kbd>[&nbsp;&nbsp;]</kbd><span>Paginate stats pages</span>

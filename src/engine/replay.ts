@@ -1,6 +1,6 @@
 import { Simulation, SimulationState } from './simulation';
 import { TunableSettings } from './settings';
-import { Position } from './types';
+import { Position, Substance } from './types';
 
 /** Bumped whenever {@link Replay}'s shape changes in a way old replay files can't be read as. */
 export const REPLAY_VERSION = 2;
@@ -14,6 +14,8 @@ export const REPLAY_VERSION = 2;
 export type RecordedInput =
   | { tick: number; type: 'spawnRandomOrganic' }
   | { tick: number; type: 'spawnOrganicAt'; position: Position }
+  | { tick: number; type: 'spawnMineralAt'; position: Position; substance: Substance; size: number }
+  | { tick: number; type: 'erase'; position: Position }
   | { tick: number; type: 'updateSettings'; settings: Partial<TunableSettings> };
 
 /**
@@ -48,6 +50,12 @@ export function applyRecordedInput(simulation: Simulation, input: RecordedInput)
       break;
     case 'spawnOrganicAt':
       simulation.spawnOrganicAt(input.position);
+      break;
+    case 'spawnMineralAt':
+      simulation.spawnMineralAt(input.position, input.substance, input.size);
+      break;
+    case 'erase':
+      simulation.eraseAt(input.position);
       break;
     case 'updateSettings':
       Object.assign(simulation.settings, input.settings);
