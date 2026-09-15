@@ -65,9 +65,10 @@ let lastLoopTime: number | null = null;
 let lastPostTime: number | null = null;
 
 // Replay recording (#33): while `recording` is true, every spawnRandomOrganic/
-// spawnOrganicAt/updateSettings message is appended to `recordedInputs` (tagged with the
-// tick already completed at that point) on top of `recordingInitialState`, the snapshot
-// taken the moment recording started. `stopRecording` packages the two into a `Replay`.
+// spawnOrganicAt/spawnMineralAt/erase/updateSettings message (#30's god-mode brushes
+// included) is appended to `recordedInputs` (tagged with the tick already completed at
+// that point) on top of `recordingInitialState`, the snapshot taken the moment recording
+// started. `stopRecording` packages the two into a `Replay`.
 let recording = false;
 let recordingInitialState: SimulationState | null = null;
 let recordedInputs: RecordedInput[] = [];
@@ -141,6 +142,20 @@ self.onmessage = (event: MessageEvent) => {
     case 'spawnOrganicAt':
       recordInput({ tick: simulation.tickCount, type: 'spawnOrganicAt', position: message.position });
       simulation.spawnOrganicAt(message.position);
+      break;
+    case 'spawnMineralAt':
+      recordInput({
+        tick: simulation.tickCount,
+        type: 'spawnMineralAt',
+        position: message.position,
+        substance: message.substance,
+        size: message.size,
+      });
+      simulation.spawnMineralAt(message.position, message.substance, message.size);
+      break;
+    case 'erase':
+      recordInput({ tick: simulation.tickCount, type: 'erase', position: message.position });
+      simulation.eraseAt(message.position);
       break;
     case 'stepOnce':
       // Runs even while paused: `paused` only gates the automatic loop() below, and a

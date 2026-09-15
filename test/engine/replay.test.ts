@@ -23,6 +23,19 @@ describe('applyRecordedInput', () => {
     applyRecordedInput(sim, { tick: 0, type: 'updateSettings', settings: { mutationRate: 0.5 } });
     expect(sim.settings.mutationRate).toBe(0.5);
   });
+
+  it('spawnMineralAt places a mineral of the given substance/size at the given position (#30)', () => {
+    const sim = new Simulation(testSettings(), new SeededRNG(1));
+    applyRecordedInput(sim, { tick: 0, type: 'spawnMineralAt', position: { x: 4, y: 4 }, substance: 'Green', size: 900 });
+    expect(sim.grid.get(4, 4)).toMatchObject({ kind: 'mineral', substance: 'Green', size: 900 });
+  });
+
+  it('erase clears whatever occupies the given position (#30)', () => {
+    const sim = new Simulation(testSettings(), new SeededRNG(1));
+    sim.spawnOrganicAt({ x: 4, y: 4 });
+    applyRecordedInput(sim, { tick: 0, type: 'erase', position: { x: 4, y: 4 } });
+    expect(sim.grid.get(4, 4)).toBeNull();
+  });
 });
 
 /**
@@ -53,7 +66,9 @@ describe('Replay (#33)', () => {
     const inputs: Replay['inputs'] = [
       { tick: 0, type: 'spawnRandomOrganic' },
       { tick: 0, type: 'spawnOrganicAt', position: { x: 1, y: 1 } },
+      { tick: 2, type: 'spawnMineralAt', position: { x: 6, y: 6 }, substance: 'Yellow', size: 500 },
       { tick: 5, type: 'updateSettings', settings: { mutationRate: 0.5 } },
+      { tick: 8, type: 'erase', position: { x: 1, y: 1 } },
       { tick: 12, type: 'spawnRandomOrganic' },
     ];
 

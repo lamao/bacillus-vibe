@@ -158,6 +158,22 @@ npm run coverage   # vitest run --coverage (lcov + text report)
   `handleImportedFile`, which tries `parseSnapshot` then `parseReplay`
   before giving up, so either file picker accepts either kind of file
   rather than rejecting a perfectly good one for going in the "wrong" slot.
+  A footer brush button (#30, `T`) opens a "God mode" tool panel that picks
+  what tapping the grid does, replacing the previous always-add-a-creature
+  behavior: **Organic** (the original tap-to-add), **Food mineral** and
+  **Toxin** (both post a `spawnMineralAt` message and a substance swatch
+  row picks which of the 5 physical substances to place), and **Erase**
+  (posts `erase`, clearing whatever occupies the tapped cell via
+  `Simulation.eraseAt`/`Grid.clear`). Food mineral and Toxin are the exact
+  same engine primitive — the engine has no dedicated toxin substance,
+  since `applyToxin` (`engine/phases.ts`) already damages an organic from
+  *any* entity whose substance matches that organic's own `dna.toxin`, so
+  a placed mineral is simultaneously food for some organics and toxin for
+  others depending on their DNA, never on which tool placed it. The two
+  tools are kept as separate menu entries anyway, for discoverability, and
+  differ only in the default size placed (`settings.defaultSize` for Food
+  mineral, `settings.maxSize` for Toxin — a food-portion-sized dose versus
+  a lethal one).
 
 ## Replay files (#33)
 
@@ -185,12 +201,12 @@ From that point the loaded run behaves like any other paused simulation:
 resuming manually is a deliberate fork into new, non-replayed territory,
 not a continuation of the recording.
 
-Currently the only recordable interactions are add-creature clicks and live
-settings-panel edits — the two that already exist and affect a run's
-trajectory. `RecordedInput` (`src/engine/replay.ts`) is a closed union,
-so a future interaction that should also be replayable (e.g. a "god mode"
-edit, if one is ever added) is a matter of adding a variant there and to
-the worker's recording/replay switch, not a redesign of the format.
+Recordable interactions are add-creature clicks, god-mode mineral/toxin
+placement and erase (#30), and live settings-panel edits — every
+interaction that exists and affects a run's trajectory. `RecordedInput`
+(`src/engine/replay.ts`) is a closed union, so a future interaction that
+should also be replayable is a matter of adding a variant there and to the
+worker's recording/replay switch, not a redesign of the format.
 
 ## Domain model summary
 
